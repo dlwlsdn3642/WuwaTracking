@@ -6,6 +6,8 @@
     <string name="label_refresh">새로고침</string>
     <string name="label_uid">UID</string>
     <string name="label_resonance_level">연각레벨</string>
+    <string name="label_github">깃허브</string>
+    <string name="message_open_github_failed">깃허브 페이지를 열 수 없습니다.</string>
     <string name="label_resources">자원 현황</string>
     <string name="label_waveplates">웨이브 플레이트</string>
     <string name="label_wavesubstance">결정 단체</string>

@@ -225,6 +225,27 @@ fun MainScreen(
                             )
                         }
                     }
+                    IconButton(
+                        onClick = {
+                            val uri = Uri.parse("https://github.com/dlwlsdn3642/WuwaTracking")
+                            val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+                                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                            }
+                            runCatching { context.startActivity(intent) }
+                                .onFailure {
+                                    Toast.makeText(
+                                        context,
+                                        R.string.message_open_github_failed,
+                                        Toast.LENGTH_SHORT
+                                    ).show()
+                                }
+                        }
+                    ) {
+                        Icon(
+                            painter = painterResource(id = R.drawable.ic_github),
+                            contentDescription = stringResource(id = R.string.label_github)
+                        )
+                    }
                     Box {
                         IconButton(onClick = { optionsExpanded = true }) {
                             Icon(
