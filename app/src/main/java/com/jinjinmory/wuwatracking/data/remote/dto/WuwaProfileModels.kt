@@ -2,7 +2,6 @@ package com.jinjinmory.wuwatracking.data.remote.dto
 
 import com.google.gson.JsonElement
 import com.google.gson.annotations.SerializedName
-import kotlin.math.max
 
 data class WuwaProfile(
     val name: String,
@@ -45,8 +44,7 @@ data class QueryRolePayload(
         val baseData = base ?: return null
         val name = baseData.name ?: return null
         val uid = baseData.id ?: return null
-        val rawLevel = baseData.level ?: 0
-        val resonanceLevel = max(rawLevel - 1, 0)
+        val resonanceLevel = baseData.level ?: 0
 
         val battle = battlePass
         val waveplatesCurrent = baseData.energy ?: 0
