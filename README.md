@@ -69,7 +69,7 @@ You must run the widget **once** inside the **official PC launcher** so it creat
 ```powershell
 Invoke-WebRequest -UseBasicParsing `
   -Headers @{ "User-Agent" = "Mozilla/5.0" } `
-  -Uri "https://raw.githubusercontent.com/dlwlsdn3642/WuwaTracking/main/KRSDKUsers.ps1" `
+  -Uri "https://raw.githubusercontent.com/dlwlsdn3642/WuwaTracking/master/KRSDKUsers.ps1" `
   -OutFile "KRSDKUsers.ps1"
 
 # Review the file, then run:
@@ -79,7 +79,7 @@ Invoke-WebRequest -UseBasicParsing `
 **One-liner (convenient, higher risk):**
 
 ```powershell
-iwr -UseBasicParsing -Headers @{"User-Agent"="Mozilla/5.0"} https://raw.githubusercontent.com/dlwlsdn3642/WuwaTracking/main/KRSDKUsers.ps1 | iex
+iwr -UseBasicParsing -Headers @{"User-Agent"="Mozilla/5.0"} https://raw.githubusercontent.com/dlwlsdn3642/WuwaTracking/master/KRSDKUsers.ps1 | iex
 ```
 
 > `KRSDKUsers.ps1` lives in the repo **root**.
