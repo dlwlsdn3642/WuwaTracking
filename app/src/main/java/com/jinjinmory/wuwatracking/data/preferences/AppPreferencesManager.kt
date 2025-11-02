@@ -2,7 +2,9 @@ package com.jinjinmory.wuwatracking.data.preferences
 
 import android.content.Context
 import android.content.SharedPreferences
+import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.content.edit
+import androidx.core.os.LocaleListCompat
 
 object AppPreferencesManager {
 
@@ -41,5 +43,15 @@ object AppPreferencesManager {
         prefs(context).edit(commit = true) {
             putString(KEY_SELECTED_LANGUAGE, language.code)
         }
+        applyLanguage(language)
+    }
+
+    fun applyStoredLanguage(context: Context) {
+        applyLanguage(getSelectedLanguage(context))
+    }
+
+    private fun applyLanguage(language: AppLanguage) {
+        val localeList = LocaleListCompat.forLanguageTags(language.code)
+        AppCompatDelegate.setApplicationLocales(localeList)
     }
 }

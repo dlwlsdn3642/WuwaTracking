@@ -143,6 +143,7 @@ fun MainScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val waveplateName = stringResource(id = R.string.proper_waveplates)
 
     var optionsExpanded by remember { mutableStateOf(false) }
     var showSettingsDialog by rememberSaveable { mutableStateOf(false) }
@@ -277,13 +278,18 @@ fun MainScreen(
                     ) {
                         IconButton(onClick = { showThresholdDialog = true }) {
                             val contentDescription = when (waveplateThresholds.size) {
-                                0 -> stringResource(id = R.string.label_waveplate_threshold_disabled)
+                                0 -> stringResource(
+                                    id = R.string.label_waveplate_threshold_disabled,
+                                    waveplateName
+                                )
                                 1 -> stringResource(
                                     id = R.string.label_waveplate_threshold_with_value,
+                                    waveplateName,
                                     waveplateThresholds.first()
                                 )
                                 else -> stringResource(
                                     id = R.string.label_waveplate_threshold_with_multiple,
+                                    waveplateName,
                                     waveplateThresholds.joinToString(", ")
                                 )
                             }
@@ -510,7 +516,11 @@ fun MainScreen(
                 } else {
                     R.string.message_waveplate_threshold_saved
                 }
-                Toast.makeText(context, messageRes, Toast.LENGTH_SHORT).show()
+                Toast.makeText(
+                    context,
+                    context.getString(messageRes, waveplateName),
+                    Toast.LENGTH_SHORT
+                ).show()
 
                 if (newThresholds.isNotEmpty() &&
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
@@ -868,6 +878,7 @@ private fun WaveplateThresholdDialog(
     onDismiss: () -> Unit,
     onSave: (List<Int>) -> Unit
 ) {
+    val waveplateLabel = stringResource(id = R.string.proper_waveplates)
     val thresholds = remember { mutableStateListOf<Int>() }
     var thresholdInput by rememberSaveable { mutableStateOf("") }
 
@@ -886,11 +897,11 @@ private fun WaveplateThresholdDialog(
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = stringResource(id = R.string.label_waveplate_threshold_settings)) },
+        title = { Text(text = stringResource(id = R.string.label_waveplate_threshold_settings, waveplateLabel)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = stringResource(id = R.string.info_waveplate_threshold),
+                    text = stringResource(id = R.string.info_waveplate_threshold, waveplateLabel),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )

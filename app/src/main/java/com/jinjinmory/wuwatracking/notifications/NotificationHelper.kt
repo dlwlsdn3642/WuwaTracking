@@ -29,12 +29,13 @@ object NotificationHelper {
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
+        val waveplateName = context.getString(R.string.proper_waveplates)
         val channel = NotificationChannel(
             CHANNEL_ID,
-            context.getString(R.string.notification_channel_name),
+            context.getString(R.string.notification_channel_name, waveplateName),
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = context.getString(R.string.notification_channel_description)
+            description = context.getString(R.string.notification_channel_description, waveplateName)
         }
         manager.createNotificationChannel(channel)
     }
@@ -62,11 +63,13 @@ object NotificationHelper {
     fun notifyWaveplatesFull(context: Context, name: String, current: Int, max: Int) {
         if (!canPostNotifications(context)) return
         ensureChannel(context)
+        val waveplateName = context.getString(R.string.proper_waveplates)
         val builder = baseBuilder(
             context = context,
-            title = context.getString(R.string.notification_full_title),
+            title = context.getString(R.string.notification_full_title, waveplateName),
             content = context.getString(
                 R.string.notification_full_body,
+                waveplateName,
                 current,
                 max,
                 name
@@ -78,13 +81,15 @@ object NotificationHelper {
     fun notifyWaveplatesThreshold(context: Context, threshold: Int, profile: WuwaProfile) {
         if (!canPostNotifications(context)) return
         ensureChannel(context)
+        val waveplateName = context.getString(R.string.proper_waveplates)
         val builder = baseBuilder(
             context = context,
-            title = context.getString(R.string.notification_threshold_title, threshold),
+            title = context.getString(R.string.notification_threshold_title, waveplateName, threshold),
             content = context.getString(
                 R.string.notification_threshold_body,
-                profile.waveplatesCurrent,
-                profile.name
+                waveplateName,
+                profile.name,
+                profile.waveplatesCurrent
             )
         )
         val notificationId = NOTIFICATION_ID_THRESHOLD_BASE + threshold

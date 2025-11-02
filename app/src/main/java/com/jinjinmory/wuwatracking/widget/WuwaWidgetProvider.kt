@@ -59,6 +59,7 @@ class WuwaWidgetProvider : AppWidgetProvider() {
                     R.id.widget_subtext,
                     context.getString(
                         R.string.widget_label_waveplates_detail,
+                        context.getString(R.string.proper_waveplates),
                         profile.waveplatesCurrent,
                         profile.wavesubstance
                     )
