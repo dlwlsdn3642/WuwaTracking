@@ -67,4 +67,12 @@
     <string name="message_waveplate_threshold_duplicate">This threshold is already in the list.</string>
     <string name="action_add_threshold">Add</string>
     <string name="action_remove_threshold">Remove</string>
+    <string name="info_multi_profile_hint">Store multiple profile credentials and choose which one to use.</string>
+    <string name="action_add_profile">Add profile</string>
+    <string name="action_remove_profile">Remove profile</string>
+    <string name="label_language_settings">Language</string>
+    <string name="label_language_korean">Korean</string>
+    <string name="label_language_english">English (coming soon)</string>
+    <string name="info_language_placeholder">English localization is on the way. You can select it in advance.</string>
+    <string name="message_language_saved">Language preference saved.</string>
 </resources>

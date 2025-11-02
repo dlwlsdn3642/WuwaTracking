@@ -1,8 +1,9 @@
 package com.jinjinmory.wuwatracking.ui.main
 
 import android.Manifest
-import android.os.Build
 import android.content.Intent
+import android.content.Context
+import android.os.Build
 import android.net.Uri
 import android.provider.Settings
 import android.widget.Toast
@@ -52,6 +53,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -61,8 +63,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
@@ -101,6 +104,37 @@ import org.json.JSONObject
 
 private val SUPPORTED_REGIONS = listOf("America", "Asia", "Europe", "HMT", "SEA")
 
+private data class ProfileUiModel(
+    val id: String,
+    val uid: String,
+    val region: String,
+    val authKey: String
+)
+
+private data class ProfileEditorState(
+    val id: String,
+    val uid: String,
+    val region: String,
+    val authKey: String,
+    val authKeyVisible: Boolean = false
+)
+
+private fun ProfileUiModel.toEditorState(): ProfileEditorState =
+    ProfileEditorState(id = id, uid = uid, region = region, authKey = authKey)
+
+private fun ProfileEditorState.toUiModel(): ProfileUiModel =
+    ProfileUiModel(id = id, uid = uid.trim(), region = region.trim(), authKey = authKey.trim())
+
+private fun loadProfiles(context: Context): List<ProfileUiModel> =
+    UserSettingsManager.getProfiles(context).map { stored ->
+        ProfileUiModel(
+            id = stored.id,
+            uid = stored.uid,
+            region = stored.region,
+            authKey = AuthKeyManager.getAuthKeyForProfile(context, stored.id).orEmpty()
+        )
+    }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -112,13 +146,13 @@ fun MainScreen(
 
     var optionsExpanded by remember { mutableStateOf(false) }
     var showSettingsDialog by rememberSaveable { mutableStateOf(false) }
+    var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
     var showThresholdDialog by rememberSaveable { mutableStateOf(false) }
     var showRawJsonDialog by rememberSaveable { mutableStateOf(false) }
 
-    var hasStoredAuthKey by remember { mutableStateOf(!AuthKeyManager.getAuthKey(context).isNullOrEmpty()) }
-    var settingsAuthKey by remember { mutableStateOf(AuthKeyManager.getAuthKey(context).orEmpty()) }
-    var settingsUid by remember { mutableStateOf(UserSettingsManager.getUid(context).orEmpty()) }
-    var settingsRegion by remember { mutableStateOf(UserSettingsManager.getRegion(context).orEmpty()) }
+    var profiles by remember { mutableStateOf(loadProfiles(context)) }
+    var activeProfileId by remember { mutableStateOf(UserSettingsManager.getActiveProfileId(context)) }
+    var selectedLanguage by remember { mutableStateOf(AppPreferencesManager.getSelectedLanguage(context)) }
     var waveplateThresholds by remember { mutableStateOf(NotificationSettingsManager.getWaveplateThresholds(context)) }
     var cachedRawPayload by remember { mutableStateOf(ProfileCacheManager.getPayload(context)?.rawPayload) }
     var rawJsonDialogContent by remember { mutableStateOf<String?>(null) }
@@ -142,12 +176,30 @@ fun MainScreen(
         }
     }
 
-    val refreshAction: () -> Unit = {
-        val effectiveAuthKey = settingsAuthKey.ifBlank { BuildConfig.DEFAULT_AUTH_KEY }
-        val effectiveUid = settingsUid.ifBlank { BuildConfig.DEFAULT_UID }
-        val effectiveRegion = settingsRegion.ifBlank { BuildConfig.DEFAULT_REGION }
+    LaunchedEffect(profiles, activeProfileId) {
+        val ids = profiles.map { it.id }
+        val current = activeProfileId
+        when {
+            ids.isEmpty() && current != null -> {
+                activeProfileId = null
+                UserSettingsManager.setActiveProfileId(context, null)
+            }
+            ids.isNotEmpty() && (current == null || current !in ids) -> {
+                val fallbackId = ids.first()
+                activeProfileId = fallbackId
+                UserSettingsManager.setActiveProfileId(context, fallbackId)
+            }
+        }
+    }
 
-        if (effectiveAuthKey.isBlank() || effectiveUid.isBlank() || effectiveRegion.isBlank()) {
+    val activeProfile = profiles.firstOrNull { it.id == activeProfileId } ?: profiles.firstOrNull()
+    val effectiveAuthKey = activeProfile?.authKey?.ifBlank { BuildConfig.DEFAULT_AUTH_KEY } ?: BuildConfig.DEFAULT_AUTH_KEY
+    val effectiveUid = activeProfile?.uid?.ifBlank { BuildConfig.DEFAULT_UID } ?: BuildConfig.DEFAULT_UID
+    val effectiveRegion = activeProfile?.region?.ifBlank { BuildConfig.DEFAULT_REGION } ?: BuildConfig.DEFAULT_REGION
+    val hasValidCredentials = effectiveAuthKey.isNotBlank() && effectiveUid.isNotBlank() && effectiveRegion.isNotBlank()
+
+    val refreshAction: () -> Unit = {
+        if (!hasValidCredentials) {
             Toast.makeText(
                 context,
                 R.string.message_missing_settings,
@@ -162,11 +214,8 @@ fun MainScreen(
         }
     }
 
-    LaunchedEffect(settingsAuthKey, settingsUid, settingsRegion) {
-        val effectiveAuthKey = settingsAuthKey.ifBlank { BuildConfig.DEFAULT_AUTH_KEY }
-        val effectiveUid = settingsUid.ifBlank { BuildConfig.DEFAULT_UID }
-        val effectiveRegion = settingsRegion.ifBlank { BuildConfig.DEFAULT_REGION }
-        if (effectiveAuthKey.isNotBlank() && effectiveUid.isNotBlank() && effectiveRegion.isNotBlank()) {
+    LaunchedEffect(effectiveAuthKey, effectiveUid, effectiveRegion) {
+        if (hasValidCredentials) {
             viewModel.refresh(
                 authKey = effectiveAuthKey,
                 uid = effectiveUid,
@@ -290,6 +339,19 @@ fun MainScreen(
                                 }
                             )
                             DropdownMenuItem(
+                                text = { Text(stringResource(id = R.string.label_language_settings)) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.Settings,
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = {
+                                    optionsExpanded = false
+                                    showLanguageDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
                                 text = { Text(stringResource(id = R.string.label_test_notification)) },
                                 leadingIcon = {
                                     Icon(
@@ -336,10 +398,8 @@ fun MainScreen(
 
     if (showSettingsDialog) {
         SettingsDialog(
-            initialAuthKey = settingsAuthKey,
-            initialUid = settingsUid,
-            initialRegion = settingsRegion,
-            hasExistingAuthKey = hasStoredAuthKey,
+            profiles = profiles,
+            activeProfileId = activeProfileId,
             rawPayload = cachedRawPayload,
             onViewRawJson = {
                 val payload = cachedRawPayload
@@ -351,36 +411,68 @@ fun MainScreen(
                 }
             },
             onDismiss = { showSettingsDialog = false },
-            onSave = { authKey, uid, region ->
-                val sanitizedKey = authKey.trim()
-                val sanitizedUid = uid.trim()
-                val sanitizedRegion = region.trim()
+            onSave = { updatedProfiles, selectedActiveId ->
+                val previousProfiles = profiles
+                val previousActiveId = activeProfileId
+                val sanitizedProfiles = updatedProfiles.map { profile ->
+                    profile.copy(
+                        uid = profile.uid.trim(),
+                        region = profile.region.trim(),
+                        authKey = profile.authKey.trim()
+                    )
+                }
+                val metadata = sanitizedProfiles.map { profile ->
+                    UserSettingsManager.StoredProfile(
+                        id = profile.id,
+                        uid = profile.uid,
+                        region = profile.region
+                    )
+                }
+                val previousIds = previousProfiles.map { it.id }.toSet()
+                val newIds = sanitizedProfiles.map { it.id }.toSet()
 
-                val previousKey = settingsAuthKey
-
-                AuthKeyManager.saveAuthKey(context, sanitizedKey)
-                hasStoredAuthKey = sanitizedKey.isNotEmpty()
-                settingsAuthKey = sanitizedKey
-
-                UserSettingsManager.saveUid(context, sanitizedUid)
-                settingsUid = sanitizedUid
-
-                UserSettingsManager.saveRegion(context, sanitizedRegion)
-                settingsRegion = sanitizedRegion
-
-                Toast.makeText(context, R.string.message_settings_saved, Toast.LENGTH_SHORT).show()
-
-                if (sanitizedKey != previousKey) {
-                    val toastMessageRes = if (sanitizedKey.isEmpty()) {
-                        R.string.message_auth_key_cleared
-                    } else {
-                        R.string.message_auth_key_saved
-                    }
-                    Toast.makeText(context, toastMessageRes, Toast.LENGTH_SHORT).show()
+                UserSettingsManager.replaceProfiles(context, metadata)
+                newIds.forEach { id ->
+                    val authKey = sanitizedProfiles.first { it.id == id }.authKey
+                    AuthKeyManager.saveAuthKeyForProfile(context, id, authKey)
+                }
+                (previousIds - newIds).forEach { id ->
+                    AuthKeyManager.removeAuthKeyForProfile(context, id)
                 }
 
+                val resolvedActiveId = when {
+                    selectedActiveId != null && newIds.contains(selectedActiveId) -> selectedActiveId
+                    activeProfileId != null && newIds.contains(activeProfileId) -> activeProfileId
+                    else -> sanitizedProfiles.firstOrNull()?.id
+                }
+                UserSettingsManager.setActiveProfileId(context, resolvedActiveId)
+                profiles = sanitizedProfiles
+                activeProfileId = resolvedActiveId
+
+                if (resolvedActiveId != previousActiveId) {
+                    ProfileCacheManager.clear(context)
+                    cachedRawPayload = null
+                } else {
+                    cachedRawPayload = ProfileCacheManager.getPayload(context)?.rawPayload
+                }
+
+                BackgroundRefreshScheduler.scheduleNext(context)
+                Toast.makeText(context, R.string.message_settings_saved, Toast.LENGTH_SHORT).show()
                 showSettingsDialog = false
             }
+        )
+    }
+
+    if (showLanguageDialog) {
+        LanguageSettingsDialog(
+            currentLanguage = selectedLanguage,
+            onSelect = { language ->
+                selectedLanguage = language
+                AppPreferencesManager.setSelectedLanguage(context, language)
+                Toast.makeText(context, R.string.message_language_saved, Toast.LENGTH_SHORT).show()
+                showLanguageDialog = false
+            },
+            onDismiss = { showLanguageDialog = false }
         )
     }
 
@@ -445,117 +537,103 @@ fun MainScreen(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsDialog(
-    initialAuthKey: String,
-    initialUid: String,
-    initialRegion: String,
-    hasExistingAuthKey: Boolean,
+    profiles: List<ProfileUiModel>,
+    activeProfileId: String?,
     rawPayload: String?,
     onViewRawJson: () -> Unit,
     onDismiss: () -> Unit,
-    onSave: (String, String, String) -> Unit
+    onSave: (List<ProfileUiModel>, String?) -> Unit
 ) {
-    var authKey by rememberSaveable(initialAuthKey) { mutableStateOf(initialAuthKey) }
-    var uid by rememberSaveable(initialUid) { mutableStateOf(initialUid) }
     val regionOptions = SUPPORTED_REGIONS
-    var region by rememberSaveable(initialRegion) {
-        mutableStateOf(initialRegion.takeIf { it in regionOptions } ?: "")
+    val profileStates = remember(profiles) {
+        val initialStates = if (profiles.isEmpty()) {
+            listOf(
+                ProfileEditorState(
+                    id = UserSettingsManager.generateProfileId(),
+                    uid = "",
+                    region = "",
+                    authKey = ""
+                )
+            )
+        } else {
+            profiles.map { it.toEditorState() }
+        }
+        mutableStateListOf<ProfileEditorState>().apply { addAll(initialStates) }
     }
-    var regionDropdownExpanded by remember { mutableStateOf(false) }
-    var authKeyVisible by rememberSaveable { mutableStateOf(false) }
+    var selectedProfileId by rememberSaveable(activeProfileId, profiles) {
+        mutableStateOf(
+            activeProfileId ?: profileStates.firstOrNull()?.id
+        )
+    }
+    val regionDropdownStates = remember { mutableStateMapOf<String, Boolean>() }
+    val scrollState = rememberScrollState()
+
+    LaunchedEffect(profileStates.size) {
+        if (profileStates.none { it.id == selectedProfileId }) {
+            selectedProfileId = profileStates.firstOrNull()?.id
+        }
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(text = stringResource(id = R.string.label_profile_settings)) },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                if (hasExistingAuthKey) {
-                    Text(
-                        text = stringResource(id = R.string.info_auth_key_existing),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                }
-                OutlinedTextField(
-                    value = authKey,
-                    onValueChange = { authKey = it },
-                    label = { Text(stringResource(id = R.string.hint_auth_key)) },
-                    singleLine = true,
-                    visualTransformation = if (authKeyVisible) {
-                        VisualTransformation.None
-                    } else {
-                        PasswordVisualTransformation()
-                    },
-                    trailingIcon = {
-                        val iconRes = if (authKeyVisible) {
-                            R.drawable.ic_visibility_off
-                        } else {
-                            R.drawable.ic_visibility
-                        }
-                        val description = if (authKeyVisible) {
-                            stringResource(id = R.string.action_hide_auth_key)
-                        } else {
-                            stringResource(id = R.string.action_show_auth_key)
-                        }
-                        IconButton(onClick = { authKeyVisible = !authKeyVisible }) {
-                            Icon(
-                                painter = painterResource(id = iconRes),
-                                contentDescription = description
-                            )
-                        }
-                    },
-                    modifier = Modifier.fillMaxWidth()
-                )
+            Column(
+                modifier = Modifier
+                    .heightIn(max = 420.dp)
+                    .verticalScroll(scrollState),
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
                 Text(
-                    text = stringResource(id = R.string.hint_auth_key_info),
+                    text = stringResource(id = R.string.info_multi_profile_hint),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                OutlinedTextField(
-                    value = uid,
-                    onValueChange = { uid = it },
-                    label = { Text(stringResource(id = R.string.hint_uid)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                ExposedDropdownMenuBox(
-                    expanded = regionDropdownExpanded,
-                    onExpandedChange = { regionDropdownExpanded = !regionDropdownExpanded }
-                ) {
-                    OutlinedTextField(
-                        value = region,
-                        onValueChange = {},
-                        readOnly = true,
-                        label = { Text(stringResource(id = R.string.hint_region)) },
-                        trailingIcon = {
-                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = regionDropdownExpanded)
+                profileStates.forEach { state ->
+                    val isActive = state.id == selectedProfileId
+                    ProfileEditorCard(
+                        profile = state,
+                        isActive = isActive,
+                        canRemove = profileStates.size > 1,
+                        onActiveChange = { selectedProfileId = state.id },
+                        onUpdate = { updated ->
+                            val index = profileStates.indexOfFirst { it.id == updated.id }
+                            if (index >= 0) {
+                                profileStates[index] = updated
+                            }
                         },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .menuAnchor()
+                        onRemove = {
+                            val removeIndex = profileStates.indexOfFirst { it.id == state.id }
+                            if (removeIndex >= 0) {
+                                profileStates.removeAt(removeIndex)
+                            }
+                            regionDropdownStates.remove(state.id)
+                            if (selectedProfileId == state.id) {
+                                selectedProfileId = profileStates.firstOrNull()?.id
+                            }
+                        },
+                        regionOptions = regionOptions,
+                        isRegionMenuExpanded = regionDropdownStates[state.id] ?: false,
+                        onRegionMenuExpandedChange = { expanded ->
+                            regionDropdownStates[state.id] = expanded
+                        }
                     )
-                DropdownMenu(
-                    expanded = regionDropdownExpanded,
-                    onDismissRequest = { regionDropdownExpanded = false }
-                ) {
-                    regionOptions.forEach { option ->
-                        DropdownMenuItem(
-                            text = { Text(option) },
-                            onClick = {
-                                region = option
-                                regionDropdownExpanded = false
-                            }
-                        )
-                    }
-                    if (region.isNotBlank()) {
-                        DropdownMenuItem(
-                            text = { Text(stringResource(id = R.string.action_clear_selection)) },
-                            onClick = {
-                                region = ""
-                                regionDropdownExpanded = false
-                            }
-                        )
-                    }
                 }
+                OutlinedButton(
+                    onClick = {
+                        val newProfile = ProfileEditorState(
+                            id = UserSettingsManager.generateProfileId(),
+                            uid = "",
+                            region = "",
+                            authKey = "",
+                            authKeyVisible = false
+                        )
+                        profileStates.add(newProfile)
+                        selectedProfileId = newProfile.id
+                    },
+                    modifier = Modifier.fillMaxWidth()
+                ) {
+                    Text(text = stringResource(id = R.string.action_add_profile))
                 }
                 OutlinedButton(
                     onClick = onViewRawJson,
@@ -576,10 +654,16 @@ private fun SettingsDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = {
-                val sanitizedRegion = region.takeIf { it in regionOptions } ?: ""
-                onSave(authKey, uid, sanitizedRegion)
-            }) {
+            TextButton(
+                onClick = {
+                    val result = profileStates.map { it.toUiModel() }
+                    val resolvedSelection = selectedProfileId?.takeIf { id ->
+                        result.any { it.id == id }
+                    }
+                    onSave(result, resolvedSelection)
+                },
+                enabled = profileStates.isNotEmpty()
+            ) {
                 Text(text = stringResource(id = R.string.action_save))
             }
         },
@@ -591,6 +675,193 @@ private fun SettingsDialog(
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ProfileEditorCard(
+    profile: ProfileEditorState,
+    isActive: Boolean,
+    canRemove: Boolean,
+    onActiveChange: () -> Unit,
+    onUpdate: (ProfileEditorState) -> Unit,
+    onRemove: () -> Unit,
+    regionOptions: List<String>,
+    isRegionMenuExpanded: Boolean,
+    onRegionMenuExpandedChange: (Boolean) -> Unit
+) {
+    ElevatedCard(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.elevatedCardColors()
+    ) {
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    RadioButton(selected = isActive, onClick = onActiveChange)
+                    Text(
+                        text = profile.uid.takeIf { it.isNotBlank() }
+                            ?: stringResource(id = R.string.label_uid),
+                        style = MaterialTheme.typography.titleMedium
+                    )
+                }
+                IconButton(
+                    onClick = onRemove,
+                    enabled = canRemove
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Close,
+                        contentDescription = stringResource(id = R.string.action_remove_profile)
+                    )
+                }
+            }
+            OutlinedTextField(
+                value = profile.authKey,
+                onValueChange = { onUpdate(profile.copy(authKey = it)) },
+                label = { Text(stringResource(id = R.string.hint_auth_key)) },
+                singleLine = true,
+                visualTransformation = if (profile.authKeyVisible) {
+                    VisualTransformation.None
+                } else {
+                    PasswordVisualTransformation()
+                },
+                trailingIcon = {
+                    val iconRes = if (profile.authKeyVisible) {
+                        R.drawable.ic_visibility_off
+                    } else {
+                        R.drawable.ic_visibility
+                    }
+                    val description = if (profile.authKeyVisible) {
+                        stringResource(id = R.string.action_hide_auth_key)
+                    } else {
+                        stringResource(id = R.string.action_show_auth_key)
+                    }
+                    IconButton(onClick = {
+                        onUpdate(profile.copy(authKeyVisible = !profile.authKeyVisible))
+                    }) {
+                        Icon(
+                            painter = painterResource(id = iconRes),
+                            contentDescription = description
+                        )
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            )
+            Text(
+                text = stringResource(id = R.string.hint_auth_key_info),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            OutlinedTextField(
+                value = profile.uid,
+                onValueChange = { onUpdate(profile.copy(uid = it)) },
+                label = { Text(stringResource(id = R.string.hint_uid)) },
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth()
+            )
+            ExposedDropdownMenuBox(
+                expanded = isRegionMenuExpanded,
+                onExpandedChange = { onRegionMenuExpandedChange(!isRegionMenuExpanded) }
+            ) {
+                OutlinedTextField(
+                    value = profile.region,
+                    onValueChange = {},
+                    readOnly = true,
+                    label = { Text(stringResource(id = R.string.hint_region)) },
+                    trailingIcon = {
+                        ExposedDropdownMenuDefaults.TrailingIcon(expanded = isRegionMenuExpanded)
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .menuAnchor()
+                )
+                DropdownMenu(
+                    expanded = isRegionMenuExpanded,
+                    onDismissRequest = { onRegionMenuExpandedChange(false) }
+                ) {
+                    regionOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option) },
+                            onClick = {
+                                onUpdate(profile.copy(region = option))
+                                onRegionMenuExpandedChange(false)
+                            }
+                        )
+                    }
+                    if (profile.region.isNotBlank()) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(id = R.string.action_clear_selection)) },
+                            onClick = {
+                                onUpdate(profile.copy(region = ""))
+                                onRegionMenuExpandedChange(false)
+                            }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguageSettingsDialog(
+    currentLanguage: AppPreferencesManager.AppLanguage,
+    onSelect: (AppPreferencesManager.AppLanguage) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val languages = remember { AppPreferencesManager.AppLanguage.values().toList() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(id = R.string.label_language_settings)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(id = R.string.info_language_placeholder),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                languages.forEach { language ->
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        RadioButton(
+                            selected = language == currentLanguage,
+                            onClick = {
+                                onSelect(language)
+                            }
+                        )
+                        val labelRes = when (language) {
+                            AppPreferencesManager.AppLanguage.KOREAN -> R.string.label_language_korean
+                            AppPreferencesManager.AppLanguage.ENGLISH -> R.string.label_language_english
+                        }
+                        Text(
+                            text = stringResource(id = labelRes),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(id = R.string.action_close))
+            }
+        }
+    )
+}
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun WaveplateThresholdDialog(
     currentThresholds: List<Int>,

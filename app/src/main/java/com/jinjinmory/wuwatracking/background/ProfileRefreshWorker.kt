@@ -18,9 +18,10 @@ object ProfileRefreshWorker {
     private const val TAG = "ProfileRefreshWorker"
 
     suspend fun refresh(context: Context) {
-        val authKey = resolveAuthKey(context)
-        val uid = resolveUid(context)
-        val region = resolveRegion(context)
+        val profile = UserSettingsManager.getActiveProfile(context)
+        val authKey = AuthKeyManager.getAuthKey(context)?.takeIf { it.isNotBlank() } ?: BuildConfig.DEFAULT_AUTH_KEY
+        val uid = profile?.uid?.takeIf { it.isNotBlank() } ?: BuildConfig.DEFAULT_UID
+        val region = profile?.region?.takeIf { it.isNotBlank() } ?: BuildConfig.DEFAULT_REGION
 
         if (authKey.isBlank() || uid.isBlank() || region.isBlank()) {
             Log.d(TAG, "Skipping refresh: missing credentials")
@@ -45,19 +46,4 @@ object ProfileRefreshWorker {
     }
 
     private fun repository(): WuwaRepository = AppContainer.repository
-
-    private fun resolveAuthKey(context: Context): String {
-        val stored = AuthKeyManager.getAuthKey(context)
-        return stored?.takeIf { it.isNotBlank() } ?: BuildConfig.DEFAULT_AUTH_KEY
-    }
-
-    private fun resolveUid(context: Context): String {
-        val stored = UserSettingsManager.getUid(context)
-        return stored?.takeIf { it.isNotBlank() } ?: BuildConfig.DEFAULT_UID
-    }
-
-    private fun resolveRegion(context: Context): String {
-        val stored = UserSettingsManager.getRegion(context)
-        return stored?.takeIf { it.isNotBlank() } ?: BuildConfig.DEFAULT_REGION
-    }
 }
