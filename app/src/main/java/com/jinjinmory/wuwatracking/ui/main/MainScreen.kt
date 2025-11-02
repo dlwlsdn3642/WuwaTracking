@@ -31,6 +31,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Settings
@@ -44,6 +45,8 @@ import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -58,6 +61,7 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -95,6 +99,8 @@ import kotlin.math.max
 import org.json.JSONArray
 import org.json.JSONObject
 
+private val SUPPORTED_REGIONS = listOf("America", "Asia", "Europe", "HMT", "SEA")
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -113,7 +119,7 @@ fun MainScreen(
     var settingsAuthKey by remember { mutableStateOf(AuthKeyManager.getAuthKey(context).orEmpty()) }
     var settingsUid by remember { mutableStateOf(UserSettingsManager.getUid(context).orEmpty()) }
     var settingsRegion by remember { mutableStateOf(UserSettingsManager.getRegion(context).orEmpty()) }
-    var waveplateThreshold by remember { mutableStateOf(NotificationSettingsManager.getWaveplateThreshold(context)) }
+    var waveplateThresholds by remember { mutableStateOf(NotificationSettingsManager.getWaveplateThresholds(context)) }
     var cachedRawPayload by remember { mutableStateOf(ProfileCacheManager.getPayload(context)?.rawPayload) }
     var rawJsonDialogContent by remember { mutableStateOf<String?>(null) }
     var pendingNotificationPermission by remember { mutableStateOf(false) }
@@ -204,10 +210,15 @@ fun MainScreen(
                     val successState = uiState as? MainUiState.Success
                     BadgedBox(
                         badge = {
-                            waveplateThreshold?.let {
+                            if (waveplateThresholds.isNotEmpty()) {
                                 Badge {
+                                    val badgeLabel = if (waveplateThresholds.size == 1) {
+                                        waveplateThresholds.first().toString()
+                                    } else {
+                                        waveplateThresholds.size.toString()
+                                    }
                                     Text(
-                                        text = it.toString(),
+                                        text = badgeLabel,
                                         style = MaterialTheme.typography.labelSmall,
                                         maxLines = 1
                                     )
@@ -216,9 +227,17 @@ fun MainScreen(
                         }
                     ) {
                         IconButton(onClick = { showThresholdDialog = true }) {
-                            val contentDescription = waveplateThreshold?.let {
-                                stringResource(id = R.string.label_waveplate_threshold_with_value, it)
-                            } ?: stringResource(id = R.string.label_waveplate_threshold_disabled)
+                            val contentDescription = when (waveplateThresholds.size) {
+                                0 -> stringResource(id = R.string.label_waveplate_threshold_disabled)
+                                1 -> stringResource(
+                                    id = R.string.label_waveplate_threshold_with_value,
+                                    waveplateThresholds.first()
+                                )
+                                else -> stringResource(
+                                    id = R.string.label_waveplate_threshold_with_multiple,
+                                    waveplateThresholds.joinToString(", ")
+                                )
+                            }
                             Icon(
                                 imageVector = Icons.Filled.Notifications,
                                 contentDescription = contentDescription
@@ -385,23 +404,23 @@ fun MainScreen(
 
     if (showThresholdDialog) {
         WaveplateThresholdDialog(
-            currentThreshold = waveplateThreshold,
+            currentThresholds = waveplateThresholds,
             onDismiss = { showThresholdDialog = false },
-            onSave = { newThreshold ->
-                waveplateThreshold = newThreshold
-                NotificationSettingsManager.saveWaveplateThreshold(context, newThreshold)
+            onSave = { newThresholds ->
+                waveplateThresholds = newThresholds
+                NotificationSettingsManager.saveWaveplateThresholds(context, newThresholds)
                 NotificationSettingsManager.clearThresholdAlert(context)
                 BackgroundRefreshScheduler.scheduleNext(context)
                 showThresholdDialog = false
 
-                val messageRes = if (newThreshold == null) {
+                val messageRes = if (newThresholds.isEmpty()) {
                     R.string.message_waveplate_threshold_cleared
                 } else {
                     R.string.message_waveplate_threshold_saved
                 }
                 Toast.makeText(context, messageRes, Toast.LENGTH_SHORT).show()
 
-                if (newThreshold != null &&
+                if (newThresholds.isNotEmpty() &&
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                     !NotificationHelper.canPostNotifications(context)
                 ) {
@@ -423,6 +442,7 @@ fun MainScreen(
 }
 
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SettingsDialog(
     initialAuthKey: String,
@@ -436,7 +456,11 @@ private fun SettingsDialog(
 ) {
     var authKey by rememberSaveable(initialAuthKey) { mutableStateOf(initialAuthKey) }
     var uid by rememberSaveable(initialUid) { mutableStateOf(initialUid) }
-    var region by rememberSaveable(initialRegion) { mutableStateOf(initialRegion) }
+    val regionOptions = SUPPORTED_REGIONS
+    var region by rememberSaveable(initialRegion) {
+        mutableStateOf(initialRegion.takeIf { it in regionOptions } ?: "")
+    }
+    var regionDropdownExpanded by remember { mutableStateOf(false) }
     var authKeyVisible by rememberSaveable { mutableStateOf(false) }
 
     AlertDialog(
@@ -493,13 +517,46 @@ private fun SettingsDialog(
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
-                OutlinedTextField(
-                    value = region,
-                    onValueChange = { region = it },
-                    label = { Text(stringResource(id = R.string.hint_region)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
+                ExposedDropdownMenuBox(
+                    expanded = regionDropdownExpanded,
+                    onExpandedChange = { regionDropdownExpanded = !regionDropdownExpanded }
+                ) {
+                    OutlinedTextField(
+                        value = region,
+                        onValueChange = {},
+                        readOnly = true,
+                        label = { Text(stringResource(id = R.string.hint_region)) },
+                        trailingIcon = {
+                            ExposedDropdownMenuDefaults.TrailingIcon(expanded = regionDropdownExpanded)
+                        },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .menuAnchor()
+                    )
+                DropdownMenu(
+                    expanded = regionDropdownExpanded,
+                    onDismissRequest = { regionDropdownExpanded = false }
+                ) {
+                    regionOptions.forEach { option ->
+                        DropdownMenuItem(
+                            text = { Text(option) },
+                            onClick = {
+                                region = option
+                                regionDropdownExpanded = false
+                            }
+                        )
+                    }
+                    if (region.isNotBlank()) {
+                        DropdownMenuItem(
+                            text = { Text(stringResource(id = R.string.action_clear_selection)) },
+                            onClick = {
+                                region = ""
+                                regionDropdownExpanded = false
+                            }
+                        )
+                    }
+                }
+                }
                 OutlinedButton(
                     onClick = onViewRawJson,
                     enabled = rawPayload != null,
@@ -519,7 +576,10 @@ private fun SettingsDialog(
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(authKey, uid, region) }) {
+            TextButton(onClick = {
+                val sanitizedRegion = region.takeIf { it in regionOptions } ?: ""
+                onSave(authKey, uid, sanitizedRegion)
+            }) {
                 Text(text = stringResource(id = R.string.action_save))
             }
         },
@@ -533,13 +593,25 @@ private fun SettingsDialog(
 
 @Composable
 private fun WaveplateThresholdDialog(
-    currentThreshold: Int?,
+    currentThresholds: List<Int>,
     onDismiss: () -> Unit,
-    onSave: (Int?) -> Unit
+    onSave: (List<Int>) -> Unit
 ) {
-    var thresholdInput by rememberSaveable(currentThreshold) { mutableStateOf(currentThreshold?.toString().orEmpty()) }
+    val thresholds = remember { mutableStateListOf<Int>() }
+    var thresholdInput by rememberSaveable { mutableStateOf("") }
+
+    LaunchedEffect(currentThresholds) {
+        thresholds.clear()
+        thresholds.addAll(currentThresholds.sorted())
+        thresholdInput = ""
+    }
+
     val numericValue = thresholdInput.toIntOrNull()
-    val isValid = thresholdInput.isBlank() || (numericValue != null && numericValue in 1..240)
+    val isDuplicate = numericValue != null && numericValue in thresholds
+    val isOutOfRange = numericValue != null && numericValue !in 1..240
+    val isError = thresholdInput.isNotBlank() && (isDuplicate || isOutOfRange)
+    val canAdd = numericValue != null && numericValue in 1..240 && !isDuplicate
+    val displayedThresholds = thresholds.toList().sorted()
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -551,47 +623,90 @@ private fun WaveplateThresholdDialog(
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                OutlinedTextField(
-                    value = thresholdInput,
-                    onValueChange = { newValue ->
-                        when {
-                            newValue.isEmpty() -> thresholdInput = ""
-                            newValue.length <= 3 && newValue.all { it.isDigit() } -> thresholdInput = newValue
-                        }
-                    },
-                    label = { Text(stringResource(id = R.string.hint_waveplate_threshold)) },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions.Default.copy(keyboardType = KeyboardType.Number),
-                    isError = !isValid,
-                    supportingText = {
-                        val textRes = if (isValid) {
-                            R.string.info_waveplate_threshold_range
-                        } else {
-                            R.string.message_waveplate_threshold_invalid
-                        }
-                        val color = if (isValid) {
-                            MaterialTheme.colorScheme.onSurfaceVariant
-                        } else {
-                            MaterialTheme.colorScheme.error
-                        }
-                        Text(
-                            text = stringResource(id = textRes),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = color
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth()
+                Text(
+                    text = stringResource(id = R.string.info_waveplate_threshold_range),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (displayedThresholds.isEmpty()) {
+                    Text(
+                        text = stringResource(id = R.string.message_waveplate_threshold_empty),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        displayedThresholds.forEach { value ->
+                            Row(
+                                verticalAlignment = Alignment.CenterVertically,
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text(
+                                    text = value.toString(),
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    modifier = Modifier.weight(1f)
+                                )
+                                IconButton(onClick = { thresholds.remove(value) }) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = stringResource(id = R.string.action_remove_threshold)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    OutlinedTextField(
+                        value = thresholdInput,
+                        onValueChange = { newValue ->
+                            when {
+                                newValue.isEmpty() -> thresholdInput = ""
+                                newValue.length <= 3 && newValue.all { it.isDigit() } -> thresholdInput = newValue
+                            }
+                        },
+                        label = { Text(stringResource(id = R.string.hint_waveplate_threshold)) },
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        isError = isError,
+                        supportingText = {
+                            if (isDuplicate) {
+                                Text(
+                                    text = stringResource(id = R.string.message_waveplate_threshold_duplicate),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            } else if (isOutOfRange) {
+                                Text(
+                                    text = stringResource(id = R.string.message_waveplate_threshold_invalid),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.error
+                                )
+                            }
+                        },
+                        modifier = Modifier.weight(1f)
+                    )
+                    Button(
+                        onClick = {
+                            numericValue?.let { value ->
+                                val updated = (thresholds + value).distinct().sorted()
+                                thresholds.clear()
+                                thresholds.addAll(updated)
+                                thresholdInput = ""
+                            }
+                        },
+                        enabled = canAdd
+                    ) {
+                        Text(text = stringResource(id = R.string.action_add_threshold))
+                    }
+                }
             }
         },
         confirmButton = {
-            TextButton(
-                enabled = isValid,
-                onClick = {
-                    val value = if (thresholdInput.isBlank()) null else thresholdInput.toIntOrNull()
-                    onSave(value)
-                }
-            ) {
+            TextButton(onClick = { onSave(thresholds.toList().sorted()) }) {
                 Text(text = stringResource(id = R.string.action_save))
             }
         },

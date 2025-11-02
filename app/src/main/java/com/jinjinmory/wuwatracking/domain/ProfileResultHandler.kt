@@ -37,21 +37,31 @@ object ProfileResultHandler {
     }
 
     private fun evaluateThresholdAlert(context: Context, profile: WuwaProfile) {
-        val threshold = NotificationSettingsManager.getWaveplateThreshold(context) ?: return
-        if (threshold <= 0) {
-            NotificationSettingsManager.clearThresholdAlert(context)
+        val thresholds = NotificationSettingsManager.getWaveplateThresholds(context)
+        if (thresholds.isEmpty()) {
+            NotificationSettingsManager.saveLastThresholdAlertValues(context, emptySet())
             return
         }
         val current = profile.waveplatesCurrent
-        if (current >= threshold) {
-            val lastValue = NotificationSettingsManager.getLastThresholdAlertValue(context)
-            if ((lastValue == null || lastValue != threshold) && NotificationHelper.canPostNotifications(context)) {
-                NotificationHelper.notifyWaveplatesThreshold(context, threshold, profile)
-                NotificationSettingsManager.markThresholdAlertSent(context, threshold)
-            }
-        } else {
-            NotificationSettingsManager.clearThresholdAlert(context)
+        val triggeredThresholds = thresholds.filter { current >= it }.toSet()
+        if (triggeredThresholds.isEmpty()) {
+            NotificationSettingsManager.saveLastThresholdAlertValues(context, emptySet())
+            return
         }
+        val previouslyTriggered = NotificationSettingsManager.getLastThresholdAlertValues(context)
+        val newThresholds = triggeredThresholds - previouslyTriggered
+        val canNotify = NotificationHelper.canPostNotifications(context)
+        if (newThresholds.isNotEmpty() && canNotify) {
+            newThresholds.sorted().forEach { threshold ->
+                NotificationHelper.notifyWaveplatesThreshold(context, threshold, profile)
+            }
+        }
+        val valuesToPersist = if (canNotify) {
+            triggeredThresholds
+        } else {
+            previouslyTriggered.intersect(triggeredThresholds)
+        }
+        NotificationSettingsManager.saveLastThresholdAlertValues(context, valuesToPersist)
     }
 }
 

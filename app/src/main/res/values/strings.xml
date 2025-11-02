@@ -61,4 +61,10 @@
     <string name="widget_placeholder">프로필 데이터를 불러오면 홈 위젯에서도 확인할 수 있어요.</string>
     <string name="widget_label_resonance">연각레벨 %1$d</string>
     <string name="widget_label_waveplates_detail">웨이브 플레이트 %1$d  |  예비 %2$d</string>
+    <string name="action_clear_selection">Clear selection</string>
+    <string name="label_waveplate_threshold_with_multiple">Waveplate alerts at %1$s</string>
+    <string name="message_waveplate_threshold_empty">No thresholds added yet.</string>
+    <string name="message_waveplate_threshold_duplicate">This threshold is already in the list.</string>
+    <string name="action_add_threshold">Add</string>
+    <string name="action_remove_threshold">Remove</string>
 </resources>

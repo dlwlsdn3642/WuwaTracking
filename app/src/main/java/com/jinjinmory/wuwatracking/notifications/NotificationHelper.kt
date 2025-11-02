@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
@@ -17,10 +18,11 @@ import com.jinjinmory.wuwatracking.data.remote.dto.WuwaProfile
 
 object NotificationHelper {
 
+    private const val TAG = "NotificationHelper"
     private const val CHANNEL_ID = "waveplate_alerts"
 
     private const val NOTIFICATION_ID_FULL = 1001
-    private const val NOTIFICATION_ID_THRESHOLD = 1002
+    private const val NOTIFICATION_ID_THRESHOLD_BASE = 2000
 
     private const val CONTENT_REQUEST_CODE = 4001
 
@@ -70,7 +72,7 @@ object NotificationHelper {
                 name
             )
         )
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_FULL, builder.build())
+        notifySafely(context, NOTIFICATION_ID_FULL, builder)
     }
 
     fun notifyWaveplatesThreshold(context: Context, threshold: Int, profile: WuwaProfile) {
@@ -85,7 +87,8 @@ object NotificationHelper {
                 profile.name
             )
         )
-        NotificationManagerCompat.from(context).notify(NOTIFICATION_ID_THRESHOLD, builder.build())
+        val notificationId = NOTIFICATION_ID_THRESHOLD_BASE + threshold
+        notifySafely(context, notificationId, builder)
     }
 
     private fun baseBuilder(context: Context, title: String, content: String): NotificationCompat.Builder {
@@ -98,6 +101,19 @@ object NotificationHelper {
             .setColor(accentColor)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(createContentIntent(context))
+    }
+
+    private fun notifySafely(
+        context: Context,
+        notificationId: Int,
+        builder: NotificationCompat.Builder
+    ) {
+        val manager = NotificationManagerCompat.from(context)
+        try {
+            manager.notify(notificationId, builder.build())
+        } catch (security: SecurityException) {
+            Log.w(TAG, "Unable to post notification. Permission missing?", security)
+        }
     }
 
     private fun createContentIntent(context: Context): PendingIntent {
