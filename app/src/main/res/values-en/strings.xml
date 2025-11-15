@@ -61,7 +61,8 @@
     <string name="message_battery_optimization_disabled">Battery optimization is already disabled.</string>
     <string name="widget_placeholder">Profile data will appear here once it is loaded.</string>
     <string name="widget_label_resonance">Resonance %1$d</string>
-    <string name="widget_label_waveplates_detail">%1$s %2$d | Reserve %3$d</string>
+    <string name="widget_label_waveplates_detail">Reserve %1$d | %2$d min left</string>
+    <string name="widget_label_waveplates_detail_mini">%2$d min left</string>
     <string name="action_clear_selection">Clear selection</string>
     <string name="label_waveplate_threshold_with_multiple">%1$s alerts at %2$s</string>
     <string name="message_waveplate_threshold_empty">No thresholds added yet.</string>

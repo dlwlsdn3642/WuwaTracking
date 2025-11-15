@@ -7,6 +7,7 @@ import com.jinjinmory.wuwatracking.data.remote.dto.WuwaProfile
 import com.jinjinmory.wuwatracking.data.repository.ProfileFetchResult
 import com.jinjinmory.wuwatracking.notifications.NotificationHelper
 import com.jinjinmory.wuwatracking.widget.WuwaWidgetProvider
+import com.jinjinmory.wuwatracking.widget.WuwaMiniWidgetProvider
 
 object ProfileResultHandler {
 
@@ -20,6 +21,7 @@ object ProfileResultHandler {
         evaluateFullAlert(appContext, profile)
         evaluateThresholdAlert(appContext, profile)
         WuwaWidgetProvider.updateAll(appContext)
+        WuwaMiniWidgetProvider.updateAll(appContext)
     }
 
     private fun evaluateFullAlert(context: Context, profile: WuwaProfile) {

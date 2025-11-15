@@ -60,7 +60,8 @@
     <string name="message_battery_optimization_disabled">이미 배터리 최적화에서 제외되어 있어요.</string>
     <string name="widget_placeholder">프로필 데이터를 불러오면 홈 위젯에서도 확인할 수 있어요.</string>
     <string name="widget_label_resonance">연각레벨 %1$d</string>
-    <string name="widget_label_waveplates_detail">%1$s %2$d  |  예비 %3$d</string>
+    <string name="widget_label_waveplates_detail">예비 %1$d | %2$d분 남음</string>
+    <string name="widget_label_waveplates_detail_mini">%2$d분 남음</string>
     <string name="action_clear_selection">선택 해제</string>
     <string name="label_waveplate_threshold_with_multiple">%1$s 알림 %2$s</string>
     <string name="message_waveplate_threshold_empty">아직 추가한 임계값이 없어요.</string>

@@ -12,7 +12,7 @@ import com.jinjinmory.wuwatracking.MainActivity
 import com.jinjinmory.wuwatracking.R
 import com.jinjinmory.wuwatracking.data.preferences.ProfileCacheManager
 
-class WuwaWidgetProvider : AppWidgetProvider() {
+class WuwaMiniWidgetProvider : AppWidgetProvider() {
 
     override fun onUpdate(context: Context, appWidgetManager: AppWidgetManager, appWidgetIds: IntArray) {
         for (appWidgetId in appWidgetIds) {
@@ -23,7 +23,7 @@ class WuwaWidgetProvider : AppWidgetProvider() {
     companion object {
         fun updateAll(context: Context) {
             val appWidgetManager = AppWidgetManager.getInstance(context)
-            val component = ComponentName(context, WuwaWidgetProvider::class.java)
+            val component = ComponentName(context, WuwaMiniWidgetProvider::class.java)
             val ids = appWidgetManager.getAppWidgetIds(component)
             if (ids.isNotEmpty()) {
                 for (appWidgetId in ids) {
@@ -37,31 +37,26 @@ class WuwaWidgetProvider : AppWidgetProvider() {
             appWidgetManager: AppWidgetManager,
             appWidgetId: Int
         ) {
-            val views = RemoteViews(context.packageName, R.layout.widget_wuwa)
+            val views = RemoteViews(context.packageName, R.layout.widget_wuwa_mini)
             val profile = ProfileCacheManager.getProfile(context)
 
             if (profile != null) {
                 val max = profile.waveplatesMax.coerceAtLeast(1)
                 val current = profile.waveplatesCurrent.coerceIn(0, max)
+                val remaining = (max - current).coerceAtLeast(0)
+                val minutesToFull = remaining * 6
+
                 views.setViewVisibility(R.id.widget_content, View.VISIBLE)
                 views.setViewVisibility(R.id.widget_placeholder, View.GONE)
-                views.setTextViewText(R.id.widget_name, profile.name)
+
                 views.setTextViewText(
                     R.id.widget_waveplates_value,
                     context.getString(R.string.format_resource_progress, current, max)
                 )
-                views.setProgressBar(R.id.widget_waveplates_progress, max, current, false)
-                views.setTextViewText(
-                    R.id.widget_resonance,
-                    context.getString(R.string.widget_label_resonance, profile.resonanceLevel)
-                )
-                // Reserve and time to full in one line: "Reserve X | Full in Y min"
-                val remaining = (max - current).coerceAtLeast(0)
-                val minutesToFull = remaining * 6
                 views.setTextViewText(
                     R.id.widget_subtext,
                     context.getString(
-                        R.string.widget_label_waveplates_detail,
+                        R.string.widget_label_waveplates_detail_mini,
                         profile.wavesubstance,
                         minutesToFull
                     )
@@ -84,3 +79,4 @@ class WuwaWidgetProvider : AppWidgetProvider() {
         }
     }
 }
+

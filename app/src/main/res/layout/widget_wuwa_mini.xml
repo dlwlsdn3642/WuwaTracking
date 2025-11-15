@@ -4,7 +4,8 @@
     android:layout_width="match_parent"
     android:layout_height="wrap_content"
     android:orientation="vertical"
-    android:padding="12dp"
+    android:padding="6dp"
+    android:gravity="center_horizontal"
     android:background="@drawable/widget_background">
 
     <LinearLayout
@@ -12,10 +13,11 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:orientation="vertical"
-        android:visibility="gone">
+        android:visibility="gone"
+        android:gravity="center_horizontal">
 
         <TextView
-            android:id="@+id/widget_name"
+            android:id="@+id/widget_waveplates_value"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textColor="@android:color/white"
@@ -25,43 +27,15 @@
             android:ellipsize="end" />
 
         <TextView
-            android:id="@+id/widget_resonance"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="@android:color/white"
-            android:textSize="12sp"
-            android:alpha="0.8"
-            android:layout_marginTop="2dp" />
-
-        <TextView
-            android:id="@+id/widget_waveplates_value"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:textColor="@android:color/white"
-            android:textStyle="bold"
-            android:textSize="22sp"
-            android:layout_marginTop="12dp" />
-
-        <ProgressBar
-            android:id="@+id/widget_waveplates_progress"
-            style="@android:style/Widget.ProgressBar.Horizontal"
-            android:layout_width="match_parent"
-            android:layout_height="8dp"
-            android:layout_marginTop="6dp"
-            android:progressTint="@android:color/white"
-            android:progressBackgroundTint="@android:color/darker_gray"
-            android:indeterminate="false" />
-
-        <TextView
             android:id="@+id/widget_subtext"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textColor="@android:color/white"
             android:textSize="12sp"
-            android:alpha="0.8"
-            android:layout_marginTop="8dp" />
-
-        
+            android:alpha="0.85"
+            android:layout_marginTop="0dp"
+            android:maxLines="1"
+            android:ellipsize="end" />
     </LinearLayout>
 
     <TextView
@@ -69,7 +43,7 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:textColor="@android:color/white"
-        android:textSize="14sp"
+        android:textSize="12sp"
         android:gravity="center"
         android:text="@string/widget_placeholder"
         android:visibility="visible" />
