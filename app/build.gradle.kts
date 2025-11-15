@@ -78,6 +78,7 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.retrofit)
     implementation(libs.retrofit.converter.gson)
+    implementation(libs.gson)
     implementation(libs.okhttp.logging)
     implementation(libs.okhttp.urlconnection)
     implementation(libs.kotlinx.coroutines.android)
