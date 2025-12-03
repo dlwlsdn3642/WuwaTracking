@@ -15,6 +15,7 @@ import androidx.core.content.ContextCompat
 import com.jinjinmory.wuwatracking.MainActivity
 import com.jinjinmory.wuwatracking.R
 import com.jinjinmory.wuwatracking.data.remote.dto.WuwaProfile
+import com.jinjinmory.wuwatracking.domain.AlertResource
 
 object NotificationHelper {
 
@@ -23,19 +24,19 @@ object NotificationHelper {
 
     private const val NOTIFICATION_ID_FULL = 1001
     private const val NOTIFICATION_ID_THRESHOLD_BASE = 2000
+    private const val NOTIFICATION_ID_THRESHOLD_MULTIPLIER = 10000
 
     private const val CONTENT_REQUEST_CODE = 4001
 
     fun ensureChannel(context: Context) {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.O) return
         val manager = context.getSystemService(NotificationManager::class.java) ?: return
-        val waveplateName = context.getString(R.string.proper_waveplates)
         val channel = NotificationChannel(
             CHANNEL_ID,
-            context.getString(R.string.notification_channel_name, waveplateName),
+            context.getString(R.string.notification_channel_name),
             NotificationManager.IMPORTANCE_HIGH
         ).apply {
-            description = context.getString(R.string.notification_channel_description, waveplateName)
+            description = context.getString(R.string.notification_channel_description)
         }
         manager.createNotificationChannel(channel)
     }
@@ -79,20 +80,40 @@ object NotificationHelper {
     }
 
     fun notifyWaveplatesThreshold(context: Context, threshold: Int, profile: WuwaProfile) {
+        val waveplateName = context.getString(R.string.proper_waveplates)
+        notifyResourceThreshold(
+            context = context,
+            resource = AlertResource.WAVEPLATES,
+            resourceName = waveplateName,
+            threshold = threshold,
+            current = profile.waveplatesCurrent,
+            profileName = profile.name
+        )
+    }
+
+    fun notifyResourceThreshold(
+        context: Context,
+        resource: AlertResource,
+        resourceName: String,
+        threshold: Int,
+        current: Int,
+        profileName: String
+    ) {
         if (!canPostNotifications(context)) return
         ensureChannel(context)
-        val waveplateName = context.getString(R.string.proper_waveplates)
         val builder = baseBuilder(
             context = context,
-            title = context.getString(R.string.notification_threshold_title, waveplateName, threshold),
+            title = context.getString(R.string.notification_threshold_title, resourceName, threshold),
             content = context.getString(
                 R.string.notification_threshold_body,
-                waveplateName,
-                profile.name,
-                profile.waveplatesCurrent
+                resourceName,
+                profileName,
+                current
             )
         )
-        val notificationId = NOTIFICATION_ID_THRESHOLD_BASE + threshold
+        val notificationId = NOTIFICATION_ID_THRESHOLD_BASE +
+            (resource.ordinal * NOTIFICATION_ID_THRESHOLD_MULTIPLIER) +
+            threshold
         notifySafely(context, notificationId, builder)
     }
 

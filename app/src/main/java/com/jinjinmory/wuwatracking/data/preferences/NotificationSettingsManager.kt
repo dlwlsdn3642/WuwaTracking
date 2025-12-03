@@ -3,6 +3,7 @@ package com.jinjinmory.wuwatracking.data.preferences
 import android.content.Context
 import android.content.SharedPreferences
 import androidx.core.content.edit
+import com.jinjinmory.wuwatracking.domain.AlertResource
 
 object NotificationSettingsManager {
 
@@ -12,14 +13,22 @@ object NotificationSettingsManager {
     private const val KEY_LAST_FULL_ALERT_COUNT = "last_full_alert_count"
     private const val KEY_LAST_THRESHOLD_ALERT_VALUE = "last_threshold_alert_value"
     private const val KEY_LAST_THRESHOLD_ALERT_VALUES = "last_threshold_alert_values"
+    private const val KEY_THRESHOLDS_PREFIX = "thresholds_"
+    private const val KEY_LAST_THRESHOLD_ALERT_VALUES_PREFIX = "last_threshold_alert_values_"
 
     private fun prefs(context: Context): SharedPreferences =
         context.applicationContext.getSharedPreferences(PREF_FILE_NAME, Context.MODE_PRIVATE)
 
-    private fun sanitizeThresholds(thresholds: Collection<Int>): List<Int> =
+    private fun thresholdKey(resource: AlertResource): String =
+        "$KEY_THRESHOLDS_PREFIX${resource.key}"
+
+    private fun lastThresholdKey(resource: AlertResource): String =
+        "$KEY_LAST_THRESHOLD_ALERT_VALUES_PREFIX${resource.key}"
+
+    private fun sanitizeThresholds(resource: AlertResource, thresholds: Collection<Int>): List<Int> =
         thresholds
             .mapNotNull { value ->
-                value.takeIf { it in 1..240 }
+                value.takeIf { it in 1..resource.maxInput }
             }
             .distinct()
             .sorted()
@@ -27,40 +36,62 @@ object NotificationSettingsManager {
     private fun encodeThresholds(values: List<Int>): String =
         values.joinToString(separator = ",") { it.toString() }
 
-    private fun decodeThresholds(raw: String?): List<Int> =
+    private fun decodeThresholds(raw: String?, resource: AlertResource): List<Int> =
         raw
             ?.split(",")
             ?.mapNotNull { it.trim().toIntOrNull() }
-            ?.filter { it in 1..240 }
+            ?.filter { it in 1..resource.maxInput }
             ?.distinct()
             ?.sorted()
             ?: emptyList()
 
-    fun saveWaveplateThresholds(context: Context, thresholds: Collection<Int>) {
-        val sanitized = sanitizeThresholds(thresholds)
+    fun saveThresholds(context: Context, resource: AlertResource, thresholds: Collection<Int>) {
+        val sanitized = sanitizeThresholds(resource, thresholds)
         prefs(context).edit(commit = true) {
             if (sanitized.isEmpty()) {
-                remove(KEY_WAVEPLATE_THRESHOLDS)
+                remove(thresholdKey(resource))
             } else {
-                putString(KEY_WAVEPLATE_THRESHOLDS, encodeThresholds(sanitized))
+                putString(thresholdKey(resource), encodeThresholds(sanitized))
             }
-            remove(KEY_WAVEPLATE_THRESHOLD)
+            if (resource == AlertResource.WAVEPLATES) {
+                remove(KEY_WAVEPLATE_THRESHOLD)
+                remove(KEY_WAVEPLATE_THRESHOLDS)
+            }
         }
     }
 
-    fun getWaveplateThresholds(context: Context): List<Int> {
+    fun getThresholds(context: Context, resource: AlertResource): List<Int> {
         val preferences = prefs(context)
-        val stored = preferences.getString(KEY_WAVEPLATE_THRESHOLDS, null)
-        val decoded = decodeThresholds(stored)
+        val stored = preferences.getString(thresholdKey(resource), null)
+        val decoded = decodeThresholds(stored, resource)
         if (decoded.isNotEmpty()) {
             return decoded
         }
-        val legacy = preferences.getInt(KEY_WAVEPLATE_THRESHOLD, Int.MIN_VALUE)
-        return if (legacy == Int.MIN_VALUE || legacy <= 0) {
-            emptyList()
-        } else {
-            listOf(legacy)
+        if (resource == AlertResource.WAVEPLATES) {
+            val legacyString = preferences.getString(KEY_WAVEPLATE_THRESHOLDS, null)
+            val legacyDecoded = decodeThresholds(legacyString, resource)
+            if (legacyDecoded.isNotEmpty()) {
+                saveThresholds(context, resource, legacyDecoded)
+                return legacyDecoded
+            }
+            val legacySingle = preferences.getInt(KEY_WAVEPLATE_THRESHOLD, Int.MIN_VALUE)
+            return if (legacySingle == Int.MIN_VALUE || legacySingle <= 0) {
+                emptyList()
+            } else {
+                val normalized = listOf(legacySingle)
+                saveThresholds(context, resource, normalized)
+                normalized
+            }
         }
+        return emptyList()
+    }
+
+    fun saveWaveplateThresholds(context: Context, thresholds: Collection<Int>) {
+        saveThresholds(context, AlertResource.WAVEPLATES, thresholds)
+    }
+
+    fun getWaveplateThresholds(context: Context): List<Int> {
+        return getThresholds(context, AlertResource.WAVEPLATES)
     }
 
     fun saveWaveplateThreshold(context: Context, threshold: Int?) {
@@ -90,47 +121,71 @@ object NotificationSettingsManager {
     }
 
     fun getLastThresholdAlertValue(context: Context): Int? {
-        return getLastThresholdAlertValues(context).firstOrNull()
+        return getLastThresholdAlertValues(context, AlertResource.WAVEPLATES).firstOrNull()
     }
 
-    fun getLastThresholdAlertValues(context: Context): Set<Int> {
+    fun getLastThresholdAlertValues(context: Context, resource: AlertResource): Set<Int> {
         val preferences = prefs(context)
-        val stored = preferences.getString(KEY_LAST_THRESHOLD_ALERT_VALUES, null)
-        val decoded = decodeThresholds(stored)
+        val stored = preferences.getString(lastThresholdKey(resource), null)
+        val decoded = decodeThresholds(stored, resource)
         if (decoded.isNotEmpty()) {
             return decoded.toSet()
         }
-        val legacy = preferences.getInt(KEY_LAST_THRESHOLD_ALERT_VALUE, Int.MIN_VALUE)
-        return if (legacy == Int.MIN_VALUE || legacy <= 0) {
-            emptySet()
-        } else {
-            setOf(legacy)
+        if (resource == AlertResource.WAVEPLATES) {
+            val legacyStored = preferences.getString(KEY_LAST_THRESHOLD_ALERT_VALUES, null)
+            val legacyDecoded = decodeThresholds(legacyStored, resource)
+            if (legacyDecoded.isNotEmpty()) {
+                saveLastThresholdAlertValues(context, resource, legacyDecoded)
+                return legacyDecoded.toSet()
+            }
+            val legacySingle = preferences.getInt(KEY_LAST_THRESHOLD_ALERT_VALUE, Int.MIN_VALUE)
+            if (legacySingle != Int.MIN_VALUE && legacySingle > 0) {
+                val values = setOf(legacySingle)
+                saveLastThresholdAlertValues(context, resource, values)
+                return values
+            }
+        }
+        return emptySet()
+    }
+
+    fun saveLastThresholdAlertValues(context: Context, resource: AlertResource, values: Collection<Int>) {
+        val sanitized = sanitizeThresholds(resource, values)
+        prefs(context).edit(commit = true) {
+            if (sanitized.isEmpty()) {
+                remove(lastThresholdKey(resource))
+            } else {
+                putString(lastThresholdKey(resource), encodeThresholds(sanitized))
+            }
+            if (resource == AlertResource.WAVEPLATES) {
+                remove(KEY_LAST_THRESHOLD_ALERT_VALUE)
+                remove(KEY_LAST_THRESHOLD_ALERT_VALUES)
+            }
         }
     }
 
     fun saveLastThresholdAlertValues(context: Context, values: Collection<Int>) {
-        val sanitized = sanitizeThresholds(values)
-        prefs(context).edit(commit = true) {
-            if (sanitized.isEmpty()) {
-                remove(KEY_LAST_THRESHOLD_ALERT_VALUES)
-            } else {
-                putString(KEY_LAST_THRESHOLD_ALERT_VALUES, encodeThresholds(sanitized))
-            }
-            remove(KEY_LAST_THRESHOLD_ALERT_VALUE)
-        }
+        saveLastThresholdAlertValues(context, AlertResource.WAVEPLATES, values)
+    }
+
+    fun markThresholdAlertSent(context: Context, resource: AlertResource, threshold: Int) {
+        val updated = getLastThresholdAlertValues(context, resource) + threshold
+        saveLastThresholdAlertValues(context, resource, updated)
     }
 
     fun markThresholdAlertSent(context: Context, threshold: Int) {
-        val updated = getLastThresholdAlertValues(context) + threshold
-        saveLastThresholdAlertValues(context, updated)
+        markThresholdAlertSent(context, AlertResource.WAVEPLATES, threshold)
     }
 
     fun clearThresholdAlert(context: Context) {
-        saveLastThresholdAlertValues(context, emptySet())
+        clearThresholdAlert(context, AlertResource.WAVEPLATES)
     }
 
-    fun clearThresholdAlert(context: Context, threshold: Int) {
-        val updated = getLastThresholdAlertValues(context) - threshold
-        saveLastThresholdAlertValues(context, updated)
+    fun clearThresholdAlert(context: Context, resource: AlertResource) {
+        saveLastThresholdAlertValues(context, resource, emptySet())
+    }
+
+    fun clearThresholdAlert(context: Context, resource: AlertResource, threshold: Int) {
+        val updated = getLastThresholdAlertValues(context, resource) - threshold
+        saveLastThresholdAlertValues(context, resource, updated)
     }
 }

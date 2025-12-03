@@ -8,6 +8,8 @@ import com.jinjinmory.wuwatracking.data.repository.ProfileFetchResult
 import com.jinjinmory.wuwatracking.notifications.NotificationHelper
 import com.jinjinmory.wuwatracking.widget.WuwaWidgetProvider
 import com.jinjinmory.wuwatracking.widget.WuwaMiniWidgetProvider
+import com.jinjinmory.wuwatracking.domain.AlertResource
+import com.jinjinmory.wuwatracking.domain.currentValue
 
 object ProfileResultHandler {
 
@@ -19,7 +21,7 @@ object ProfileResultHandler {
         ProfileCacheManager.saveProfile(appContext, result.profile)
         val profile = result.profile
         evaluateFullAlert(appContext, profile)
-        evaluateThresholdAlert(appContext, profile)
+        evaluateThresholdAlerts(appContext, profile)
         WuwaWidgetProvider.updateAll(appContext)
         WuwaMiniWidgetProvider.updateAll(appContext)
     }
@@ -38,32 +40,42 @@ object ProfileResultHandler {
         }
     }
 
-    private fun evaluateThresholdAlert(context: Context, profile: WuwaProfile) {
-        val thresholds = NotificationSettingsManager.getWaveplateThresholds(context)
-        if (thresholds.isEmpty()) {
-            NotificationSettingsManager.saveLastThresholdAlertValues(context, emptySet())
-            return
-        }
-        val current = profile.waveplatesCurrent
-        val triggeredThresholds = thresholds.filter { current >= it }.toSet()
-        if (triggeredThresholds.isEmpty()) {
-            NotificationSettingsManager.saveLastThresholdAlertValues(context, emptySet())
-            return
-        }
-        val previouslyTriggered = NotificationSettingsManager.getLastThresholdAlertValues(context)
-        val newThresholds = triggeredThresholds - previouslyTriggered
+    private fun evaluateThresholdAlerts(context: Context, profile: WuwaProfile) {
         val canNotify = NotificationHelper.canPostNotifications(context)
-        if (newThresholds.isNotEmpty() && canNotify) {
-            newThresholds.sorted().forEach { threshold ->
-                NotificationHelper.notifyWaveplatesThreshold(context, threshold, profile)
+        AlertResource.entries.forEach { resource ->
+            val thresholds = NotificationSettingsManager.getThresholds(context, resource)
+            if (thresholds.isEmpty()) {
+                NotificationSettingsManager.clearThresholdAlert(context, resource)
+                return@forEach
             }
+            val current = resource.currentValue(profile)
+            val triggeredThresholds = thresholds.filter { current >= it }.toSet()
+            if (triggeredThresholds.isEmpty()) {
+                NotificationSettingsManager.clearThresholdAlert(context, resource)
+                return@forEach
+            }
+            val previouslyTriggered = NotificationSettingsManager.getLastThresholdAlertValues(context, resource)
+            val newThresholds = triggeredThresholds - previouslyTriggered
+            if (newThresholds.isNotEmpty() && canNotify) {
+                val resourceName = context.getString(resource.titleRes)
+                newThresholds.sorted().forEach { threshold ->
+                    NotificationHelper.notifyResourceThreshold(
+                        context = context,
+                        resource = resource,
+                        resourceName = resourceName,
+                        threshold = threshold,
+                        current = current,
+                        profileName = profile.name
+                    )
+                }
+            }
+            val valuesToPersist = if (canNotify) {
+                triggeredThresholds
+            } else {
+                previouslyTriggered.intersect(triggeredThresholds)
+            }
+            NotificationSettingsManager.saveLastThresholdAlertValues(context, resource, valuesToPersist)
         }
-        val valuesToPersist = if (canNotify) {
-            triggeredThresholds
-        } else {
-            previouslyTriggered.intersect(triggeredThresholds)
-        }
-        NotificationSettingsManager.saveLastThresholdAlertValues(context, valuesToPersist)
     }
 }
 

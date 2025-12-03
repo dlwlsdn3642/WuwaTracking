@@ -11,6 +11,7 @@ object AppPreferencesManager {
     private const val PREF_FILE_NAME = "wuwa_app_preferences"
     private const val KEY_BATTERY_NOTICE_ACK = "battery_notice_acknowledged"
     private const val KEY_SELECTED_LANGUAGE = "selected_language"
+    private const val KEY_WIDGET_TIME_FORMAT = "widget_time_format"
 
     enum class AppLanguage(val code: String) {
         KOREAN("ko"),
@@ -19,6 +20,17 @@ object AppPreferencesManager {
         companion object {
             fun fromCode(code: String?): AppLanguage =
                 values().firstOrNull { it.code == code } ?: KOREAN
+        }
+    }
+
+    enum class WidgetTimeFormat(val key: String) {
+        MINUTES("minutes"),
+        HOURS_MINUTES("hours_minutes"),
+        ETA("eta");
+
+        companion object {
+            fun fromKey(key: String?): WidgetTimeFormat =
+                values().firstOrNull { it.key == key } ?: MINUTES
         }
     }
 
@@ -48,6 +60,17 @@ object AppPreferencesManager {
 
     fun applyStoredLanguage(context: Context) {
         applyLanguage(getSelectedLanguage(context))
+    }
+
+    fun getWidgetTimeFormat(context: Context): WidgetTimeFormat {
+        val stored = prefs(context).getString(KEY_WIDGET_TIME_FORMAT, null)
+        return WidgetTimeFormat.fromKey(stored)
+    }
+
+    fun setWidgetTimeFormat(context: Context, format: WidgetTimeFormat) {
+        prefs(context).edit(commit = true) {
+            putString(KEY_WIDGET_TIME_FORMAT, format.key)
+        }
     }
 
     private fun applyLanguage(language: AppLanguage) {

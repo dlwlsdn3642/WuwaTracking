@@ -10,7 +10,11 @@ import android.view.View
 import android.widget.RemoteViews
 import com.jinjinmory.wuwatracking.MainActivity
 import com.jinjinmory.wuwatracking.R
+import com.jinjinmory.wuwatracking.data.preferences.AppPreferencesManager
 import com.jinjinmory.wuwatracking.data.preferences.ProfileCacheManager
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
+import java.util.Locale
 
 class WuwaMiniWidgetProvider : AppWidgetProvider() {
 
@@ -45,6 +49,8 @@ class WuwaMiniWidgetProvider : AppWidgetProvider() {
                 val current = profile.waveplatesCurrent.coerceIn(0, max)
                 val remaining = (max - current).coerceAtLeast(0)
                 val minutesToFull = remaining * 6
+                val timeFormat = AppPreferencesManager.getWidgetTimeFormat(context)
+                val timeText = formatRemainingText(context, minutesToFull, timeFormat)
 
                 views.setViewVisibility(R.id.widget_content, View.VISIBLE)
                 views.setViewVisibility(R.id.widget_placeholder, View.GONE)
@@ -58,7 +64,7 @@ class WuwaMiniWidgetProvider : AppWidgetProvider() {
                     context.getString(
                         R.string.widget_label_waveplates_detail_mini,
                         profile.wavesubstance,
-                        minutesToFull
+                        timeText
                     )
                 )
             } else {
@@ -77,6 +83,28 @@ class WuwaMiniWidgetProvider : AppWidgetProvider() {
 
             appWidgetManager.updateAppWidget(appWidgetId, views)
         }
+
+        private fun formatRemainingText(
+            context: Context,
+            minutesToFull: Int,
+            format: AppPreferencesManager.WidgetTimeFormat
+        ): String {
+            return when (format) {
+                AppPreferencesManager.WidgetTimeFormat.MINUTES ->
+                    context.getString(R.string.widget_time_left_minutes, minutesToFull)
+                AppPreferencesManager.WidgetTimeFormat.HOURS_MINUTES -> {
+                    val hours = minutesToFull / 60
+                    val minutes = minutesToFull % 60
+                    context.getString(R.string.widget_time_left_hours_minutes, hours, minutes)
+                }
+                AppPreferencesManager.WidgetTimeFormat.ETA -> {
+                    val target = LocalDateTime.now().plusMinutes(minutesToFull.toLong())
+                    val pattern = context.getString(R.string.widget_time_left_eta_pattern)
+                    val formatter = DateTimeFormatter.ofPattern(pattern, Locale.getDefault())
+                    val formatted = runCatching { target.format(formatter) }.getOrElse { "" }
+                    context.getString(R.string.widget_time_left_eta, formatted)
+                }
+            }
+        }
     }
 }
-

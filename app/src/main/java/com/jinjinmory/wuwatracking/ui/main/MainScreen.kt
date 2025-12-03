@@ -9,6 +9,7 @@ import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -25,6 +26,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -97,9 +100,11 @@ import com.jinjinmory.wuwatracking.data.remote.dto.WuwaProfile
 import com.jinjinmory.wuwatracking.data.repository.ProfileFetchResult
 import com.jinjinmory.wuwatracking.data.security.AuthKeyManager
 import com.jinjinmory.wuwatracking.domain.ProfileResultHandler
+import com.jinjinmory.wuwatracking.domain.AlertResource
 import com.jinjinmory.wuwatracking.notifications.NotificationHelper
 import com.jinjinmory.wuwatracking.util.BatteryOptimizationHelper
 import kotlin.math.max
+import kotlin.math.min
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -144,18 +149,24 @@ fun MainScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val waveplateName = stringResource(id = R.string.proper_waveplates)
 
     var optionsExpanded by remember { mutableStateOf(false) }
     var showSettingsDialog by rememberSaveable { mutableStateOf(false) }
     var showLanguageDialog by rememberSaveable { mutableStateOf(false) }
     var showThresholdDialog by rememberSaveable { mutableStateOf(false) }
+    var showWidgetSettingsDialog by rememberSaveable { mutableStateOf(false) }
     var showRawJsonDialog by rememberSaveable { mutableStateOf(false) }
 
     var profiles by remember { mutableStateOf(loadProfiles(context)) }
     var activeProfileId by remember { mutableStateOf(UserSettingsManager.getActiveProfileId(context)) }
     var selectedLanguage by remember { mutableStateOf(AppPreferencesManager.getSelectedLanguage(context)) }
-    var waveplateThresholds by remember { mutableStateOf(NotificationSettingsManager.getWaveplateThresholds(context)) }
+    val resourceThresholds = remember {
+        mutableStateMapOf<AlertResource, List<Int>>().apply {
+            AlertResource.entries.forEach { resource ->
+                put(resource, NotificationSettingsManager.getThresholds(context, resource))
+            }
+        }
+    }
     var cachedRawPayload by remember { mutableStateOf(ProfileCacheManager.getPayload(context)?.rawPayload) }
     var rawJsonDialogContent by remember { mutableStateOf<String?>(null) }
     var pendingNotificationPermission by remember { mutableStateOf(false) }
@@ -259,15 +270,12 @@ fun MainScreen(
                 ),
                 actions = {
                     val successState = uiState as? MainUiState.Success
+                    val totalThresholdCount = resourceThresholds.values.sumOf { it.size }
                     BadgedBox(
                         badge = {
-                            if (waveplateThresholds.isNotEmpty()) {
+                            if (totalThresholdCount > 0) {
                                 Badge {
-                                    val badgeLabel = if (waveplateThresholds.size == 1) {
-                                        waveplateThresholds.first().toString()
-                                    } else {
-                                        waveplateThresholds.size.toString()
-                                    }
+                                    val badgeLabel = min(totalThresholdCount, 99).toString()
                                     Text(
                                         text = badgeLabel,
                                         style = MaterialTheme.typography.labelSmall,
@@ -278,25 +286,9 @@ fun MainScreen(
                         }
                     ) {
                         IconButton(onClick = { showThresholdDialog = true }) {
-                            val contentDescription = when (waveplateThresholds.size) {
-                                0 -> stringResource(
-                                    id = R.string.label_waveplate_threshold_disabled,
-                                    waveplateName
-                                )
-                                1 -> stringResource(
-                                    id = R.string.label_waveplate_threshold_with_value,
-                                    waveplateName,
-                                    waveplateThresholds.first()
-                                )
-                                else -> stringResource(
-                                    id = R.string.label_waveplate_threshold_with_multiple,
-                                    waveplateName,
-                                    waveplateThresholds.joinToString(", ")
-                                )
-                            }
                             Icon(
                                 imageVector = Icons.Filled.Notifications,
-                                contentDescription = contentDescription
+                                contentDescription = stringResource(id = R.string.label_alert_settings)
                             )
                         }
                     }
@@ -356,6 +348,19 @@ fun MainScreen(
                                 onClick = {
                                     optionsExpanded = false
                                     showLanguageDialog = true
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text(stringResource(id = R.string.label_widget_settings)) },
+                                leadingIcon = {
+                                    Icon(
+                                        imageVector = Icons.Filled.Settings,
+                                        contentDescription = null
+                                    )
+                                },
+                                onClick = {
+                                    optionsExpanded = false
+                                    showWidgetSettingsDialog = true
                                 }
                             )
                             DropdownMenuItem(
@@ -483,6 +488,20 @@ fun MainScreen(
         )
     }
 
+    if (showWidgetSettingsDialog) {
+        WidgetSettingsDialog(
+            currentFormat = AppPreferencesManager.getWidgetTimeFormat(context),
+            onDismiss = { showWidgetSettingsDialog = false },
+            onSelect = { format ->
+                AppPreferencesManager.setWidgetTimeFormat(context, format)
+                Toast.makeText(context, R.string.message_widget_settings_saved, Toast.LENGTH_SHORT).show()
+                showWidgetSettingsDialog = false
+                com.jinjinmory.wuwatracking.widget.WuwaWidgetProvider.updateAll(context)
+                com.jinjinmory.wuwatracking.widget.WuwaMiniWidgetProvider.updateAll(context)
+            }
+        )
+    }
+
     if (showBatteryPrompt) {
         BatteryOptimizationDialog(
             onMove = {
@@ -502,28 +521,27 @@ fun MainScreen(
     }
 
     if (showThresholdDialog) {
-        WaveplateThresholdDialog(
-            currentThresholds = waveplateThresholds,
+        AlertSettingsDialog(
+            thresholds = resourceThresholds.toMap(),
             onDismiss = { showThresholdDialog = false },
             onSave = { newThresholds ->
-                waveplateThresholds = newThresholds
-                NotificationSettingsManager.saveWaveplateThresholds(context, newThresholds)
-                NotificationSettingsManager.clearThresholdAlert(context)
+                AlertResource.entries.forEach { resource ->
+                    val updated = newThresholds[resource].orEmpty()
+                    resourceThresholds[resource] = updated
+                    NotificationSettingsManager.saveThresholds(context, resource, updated)
+                    NotificationSettingsManager.clearThresholdAlert(context, resource)
+                }
                 BackgroundRefreshScheduler.scheduleNext(context)
                 showThresholdDialog = false
 
-                val messageRes = if (newThresholds.isEmpty()) {
-                    R.string.message_waveplate_threshold_cleared
-                } else {
-                    R.string.message_waveplate_threshold_saved
-                }
                 Toast.makeText(
                     context,
-                    context.getString(messageRes, waveplateName),
+                    R.string.message_alert_settings_saved,
                     Toast.LENGTH_SHORT
                 ).show()
 
-                if (newThresholds.isNotEmpty() &&
+                val hasAnyThresholds = newThresholds.values.any { it.isNotEmpty() }
+                if (hasAnyThresholds &&
                     Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
                     !NotificationHelper.canPostNotifications(context)
                 ) {
@@ -872,124 +890,104 @@ private fun LanguageSettingsDialog(
         }
     )
 }
-@OptIn(ExperimentalMaterial3Api::class)
+
 @Composable
-private fun WaveplateThresholdDialog(
-    currentThresholds: List<Int>,
-    onDismiss: () -> Unit,
-    onSave: (List<Int>) -> Unit
+private fun WidgetSettingsDialog(
+    currentFormat: AppPreferencesManager.WidgetTimeFormat,
+    onSelect: (AppPreferencesManager.WidgetTimeFormat) -> Unit,
+    onDismiss: () -> Unit
 ) {
-    val waveplateLabel = stringResource(id = R.string.proper_waveplates)
-    val thresholds = remember { mutableStateListOf<Int>() }
-    var thresholdInput by rememberSaveable { mutableStateOf("") }
-
-    LaunchedEffect(currentThresholds) {
-        thresholds.clear()
-        thresholds.addAll(currentThresholds.sorted())
-        thresholdInput = ""
-    }
-
-    val numericValue = thresholdInput.toIntOrNull()
-    val isDuplicate = numericValue != null && numericValue in thresholds
-    val isOutOfRange = numericValue != null && numericValue !in 1..240
-    val isError = thresholdInput.isNotBlank() && (isDuplicate || isOutOfRange)
-    val canAdd = numericValue != null && numericValue in 1..240 && !isDuplicate
-    val displayedThresholds = thresholds.toList().sorted()
+    val formats = remember { AppPreferencesManager.WidgetTimeFormat.values().toList() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(text = stringResource(id = R.string.label_waveplate_threshold_settings, waveplateLabel)) },
+        title = { Text(text = stringResource(id = R.string.label_widget_settings)) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text(
-                    text = stringResource(id = R.string.info_waveplate_threshold, waveplateLabel),
+                    text = stringResource(id = R.string.label_widget_time_format),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Text(
-                    text = stringResource(id = R.string.info_waveplate_threshold_range),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                if (displayedThresholds.isEmpty()) {
-                    Text(
-                        text = stringResource(id = R.string.message_waveplate_threshold_empty),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-                } else {
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        displayedThresholds.forEach { value ->
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Text(
-                                    text = value.toString(),
-                                    style = MaterialTheme.typography.bodyLarge,
-                                    modifier = Modifier.weight(1f)
-                                )
-                                IconButton(onClick = { thresholds.remove(value) }) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Close,
-                                        contentDescription = stringResource(id = R.string.action_remove_threshold)
-                                    )
-                                }
-                            }
-                        }
+                formats.forEach { format ->
+                    val labelRes = when (format) {
+                        AppPreferencesManager.WidgetTimeFormat.MINUTES -> R.string.label_widget_time_minutes
+                        AppPreferencesManager.WidgetTimeFormat.HOURS_MINUTES -> R.string.label_widget_time_hours_minutes
+                        AppPreferencesManager.WidgetTimeFormat.ETA -> R.string.label_widget_time_eta
                     }
-                }
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    OutlinedTextField(
-                        value = thresholdInput,
-                        onValueChange = { newValue ->
-                            when {
-                                newValue.isEmpty() -> thresholdInput = ""
-                                newValue.length <= 3 && newValue.all { it.isDigit() } -> thresholdInput = newValue
-                            }
-                        },
-                        label = { Text(stringResource(id = R.string.hint_waveplate_threshold)) },
-                        singleLine = true,
-                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                        isError = isError,
-                        supportingText = {
-                            if (isDuplicate) {
-                                Text(
-                                    text = stringResource(id = R.string.message_waveplate_threshold_duplicate),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            } else if (isOutOfRange) {
-                                Text(
-                                    text = stringResource(id = R.string.message_waveplate_threshold_invalid),
-                                    style = MaterialTheme.typography.bodySmall,
-                                    color = MaterialTheme.colorScheme.error
-                                )
-                            }
-                        },
-                        modifier = Modifier.weight(1f)
-                    )
-                    Button(
-                        onClick = {
-                            numericValue?.let { value ->
-                                val updated = (thresholds + value).distinct().sorted()
-                                thresholds.clear()
-                                thresholds.addAll(updated)
-                                thresholdInput = ""
-                            }
-                        },
-                        enabled = canAdd
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text(text = stringResource(id = R.string.action_add_threshold))
+                        RadioButton(
+                            selected = format == currentFormat,
+                            onClick = { onSelect(format) }
+                        )
+                        Text(
+                            text = stringResource(id = labelRes),
+                            style = MaterialTheme.typography.bodyMedium
+                        )
                     }
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(thresholds.toList().sorted()) }) {
+            TextButton(onClick = onDismiss) {
+                Text(text = stringResource(id = R.string.action_close))
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
+@Composable
+private fun AlertSettingsDialog(
+    thresholds: Map<AlertResource, List<Int>>,
+    onDismiss: () -> Unit,
+    onSave: (Map<AlertResource, List<Int>>) -> Unit
+) {
+    val pagerState = rememberPagerState(pageCount = { AlertResource.entries.size })
+    val thresholdState = remember(thresholds) {
+        mutableStateMapOf<AlertResource, List<Int>>().apply {
+            AlertResource.entries.forEach { resource ->
+                put(resource, thresholds[resource].orEmpty().sorted())
+            }
+        }
+    }
+    val thresholdInputs = remember { mutableStateMapOf<AlertResource, String>() }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(text = stringResource(id = R.string.label_alert_settings)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text(
+                    text = stringResource(id = R.string.info_alert_swipe),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 420.dp)
+                ) { page ->
+                    val resource = AlertResource.entries[page]
+                    val currentThresholds = thresholdState[resource].orEmpty()
+                    val thresholdInput = thresholdInputs.getOrPut(resource) { "" }
+                    AlertThresholdPage(
+                        resource = resource,
+                        thresholds = currentThresholds,
+                        thresholdInput = thresholdInput,
+                        onThresholdInputChange = { thresholdInputs[resource] = it },
+                        onThresholdsChange = { updated -> thresholdState[resource] = updated.sorted() }
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = { onSave(thresholdState.toMap()) }) {
                 Text(text = stringResource(id = R.string.action_save))
             }
         },
@@ -999,6 +997,125 @@ private fun WaveplateThresholdDialog(
             }
         }
     )
+}
+
+@Composable
+private fun AlertThresholdPage(
+    resource: AlertResource,
+    thresholds: List<Int>,
+    thresholdInput: String,
+    onThresholdInputChange: (String) -> Unit,
+    onThresholdsChange: (List<Int>) -> Unit
+) {
+    val resourceLabel = stringResource(id = resource.titleRes)
+    val displayedThresholds = thresholds.sorted()
+    val maxValue = resource.maxInput
+    val maxLength = maxValue.toString().length
+
+    val numericValue = thresholdInput.toIntOrNull()
+    val isDuplicate = numericValue != null && numericValue in displayedThresholds
+    val isOutOfRange = numericValue != null && numericValue !in 1..maxValue
+    val isError = thresholdInput.isNotBlank() && (isDuplicate || isOutOfRange)
+    val canAdd = numericValue != null && numericValue in 1..maxValue && !isDuplicate
+
+    val scrollState = rememberScrollState()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .verticalScroll(scrollState),
+        verticalArrangement = Arrangement.spacedBy(12.dp)
+    ) {
+        Text(
+            text = resourceLabel,
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = MaterialTheme.colorScheme.onSurface
+        )
+        Text(
+            text = stringResource(id = R.string.info_waveplate_threshold, resourceLabel),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        Text(
+            text = stringResource(id = R.string.info_waveplate_threshold_range, maxValue),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        if (displayedThresholds.isEmpty()) {
+            Text(
+                text = stringResource(id = R.string.message_waveplate_threshold_empty),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                displayedThresholds.forEach { value ->
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = value.toString(),
+                            style = MaterialTheme.typography.bodyLarge,
+                            modifier = Modifier.weight(1f)
+                        )
+                        IconButton(onClick = { onThresholdsChange(displayedThresholds - value) }) {
+                            Icon(
+                                imageVector = Icons.Filled.Close,
+                                contentDescription = stringResource(id = R.string.action_remove_threshold)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            OutlinedTextField(
+                value = thresholdInput,
+                onValueChange = { newValue ->
+                    when {
+                        newValue.isEmpty() -> onThresholdInputChange("")
+                        newValue.length <= maxLength && newValue.all { it.isDigit() } -> onThresholdInputChange(newValue)
+                    }
+                },
+                label = { Text(stringResource(id = R.string.hint_waveplate_threshold)) },
+                singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                isError = isError,
+                supportingText = {
+                    if (isDuplicate) {
+                        Text(
+                            text = stringResource(id = R.string.message_waveplate_threshold_duplicate),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    } else if (isOutOfRange) {
+                        Text(
+                            text = stringResource(id = R.string.message_waveplate_threshold_invalid, maxValue),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+                },
+                modifier = Modifier.weight(1f)
+            )
+            Button(
+                onClick = {
+                    numericValue?.let { value ->
+                        val updated = (displayedThresholds + value).distinct().sorted()
+                        onThresholdsChange(updated)
+                        onThresholdInputChange("")
+                    }
+                },
+                enabled = canAdd
+            ) {
+                Text(text = stringResource(id = R.string.action_add_threshold))
+            }
+        }
+    }
 }
 
 @Composable
