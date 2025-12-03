@@ -25,6 +25,7 @@ object NotificationHelper {
     private const val NOTIFICATION_ID_FULL = 1001
     private const val NOTIFICATION_ID_THRESHOLD_BASE = 2000
     private const val NOTIFICATION_ID_THRESHOLD_MULTIPLIER = 10000
+    private const val NOTIFICATION_ID_ACTIVITY_REMINDER = 5001
 
     private const val CONTENT_REQUEST_CODE = 4001
 
@@ -115,6 +116,21 @@ object NotificationHelper {
             (resource.ordinal * NOTIFICATION_ID_THRESHOLD_MULTIPLIER) +
             threshold
         notifySafely(context, notificationId, builder)
+    }
+
+    fun notifyActivityReminder(context: Context, profileName: String, current: Int) {
+        if (!canPostNotifications(context)) return
+        ensureChannel(context)
+        val builder = baseBuilder(
+            context = context,
+            title = context.getString(R.string.notification_activity_reminder_title),
+            content = context.getString(
+                R.string.notification_activity_reminder_body,
+                profileName,
+                current
+            )
+        )
+        notifySafely(context, NOTIFICATION_ID_ACTIVITY_REMINDER, builder)
     }
 
     private fun baseBuilder(context: Context, title: String, content: String): NotificationCompat.Builder {

@@ -43,6 +43,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Badge
 import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.Button
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
@@ -92,6 +93,7 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.jinjinmory.wuwatracking.BuildConfig
 import com.jinjinmory.wuwatracking.R
 import com.jinjinmory.wuwatracking.background.BackgroundRefreshScheduler
+import com.jinjinmory.wuwatracking.background.ActivityReminderScheduler
 import com.jinjinmory.wuwatracking.data.preferences.NotificationSettingsManager
 import com.jinjinmory.wuwatracking.data.preferences.AppPreferencesManager
 import com.jinjinmory.wuwatracking.data.preferences.ProfileCacheManager
@@ -167,6 +169,7 @@ fun MainScreen(
             }
         }
     }
+    var activityReminderConfig by remember { mutableStateOf(AppPreferencesManager.getActivityReminder(context)) }
     var cachedRawPayload by remember { mutableStateOf(ProfileCacheManager.getPayload(context)?.rawPayload) }
     var rawJsonDialogContent by remember { mutableStateOf<String?>(null) }
     var pendingNotificationPermission by remember { mutableStateOf(false) }
@@ -235,6 +238,10 @@ fun MainScreen(
                 region = effectiveRegion
             )
         }
+    }
+
+    LaunchedEffect(activityReminderConfig) {
+        ActivityReminderScheduler.schedule(context, activityReminderConfig)
     }
 
     if (uiState is MainUiState.Success) {
@@ -523,22 +530,30 @@ fun MainScreen(
     if (showThresholdDialog) {
         AlertSettingsDialog(
             thresholds = resourceThresholds.toMap(),
+            activityReminder = activityReminderConfig,
             onDismiss = { showThresholdDialog = false },
-            onSave = { newThresholds ->
+            onSave = { newThresholds, newReminder ->
                 AlertResource.entries.forEach { resource ->
                     val updated = newThresholds[resource].orEmpty()
                     resourceThresholds[resource] = updated
                     NotificationSettingsManager.saveThresholds(context, resource, updated)
                     NotificationSettingsManager.clearThresholdAlert(context, resource)
                 }
+                activityReminderConfig = newReminder
+                AppPreferencesManager.setActivityReminder(context, newReminder)
+                ActivityReminderScheduler.schedule(context, newReminder)
                 BackgroundRefreshScheduler.scheduleNext(context)
                 showThresholdDialog = false
 
-                Toast.makeText(
-                    context,
-                    R.string.message_alert_settings_saved,
-                    Toast.LENGTH_SHORT
-                ).show()
+                val alertMessage = context.getString(R.string.message_alert_settings_saved)
+                Toast.makeText(context, alertMessage, Toast.LENGTH_SHORT).show()
+                if (newReminder.enabled && newReminder.hour != null && newReminder.minute != null) {
+                    Toast.makeText(
+                        context,
+                        R.string.message_activity_reminder_saved,
+                        Toast.LENGTH_SHORT
+                    ).show()
+                }
 
                 val hasAnyThresholds = newThresholds.values.any { it.isNotEmpty() }
                 if (hasAnyThresholds &&
@@ -944,8 +959,9 @@ private fun WidgetSettingsDialog(
 @Composable
 private fun AlertSettingsDialog(
     thresholds: Map<AlertResource, List<Int>>,
+    activityReminder: AppPreferencesManager.ActivityReminderConfig,
     onDismiss: () -> Unit,
-    onSave: (Map<AlertResource, List<Int>>) -> Unit
+    onSave: (Map<AlertResource, List<Int>>, AppPreferencesManager.ActivityReminderConfig) -> Unit
 ) {
     val pagerState = rememberPagerState(pageCount = { AlertResource.entries.size })
     val thresholdState = remember(thresholds) {
@@ -956,6 +972,9 @@ private fun AlertSettingsDialog(
         }
     }
     val thresholdInputs = remember { mutableStateMapOf<AlertResource, String>() }
+    var reminderEnabled by rememberSaveable { mutableStateOf(activityReminder.enabled) }
+    var reminderHourInput by rememberSaveable { mutableStateOf(activityReminder.hour?.toString()?.padStart(2, '0') ?: "") }
+    var reminderMinuteInput by rememberSaveable { mutableStateOf(activityReminder.minute?.toString()?.padStart(2, '0') ?: "") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -981,13 +1000,31 @@ private fun AlertSettingsDialog(
                         thresholds = currentThresholds,
                         thresholdInput = thresholdInput,
                         onThresholdInputChange = { thresholdInputs[resource] = it },
-                        onThresholdsChange = { updated -> thresholdState[resource] = updated.sorted() }
+                        onThresholdsChange = { updated -> thresholdState[resource] = updated.sorted() },
+                        showActivityReminder = resource == AlertResource.ACTIVITY_POINTS,
+                        reminderEnabled = reminderEnabled,
+                        reminderHourInput = reminderHourInput,
+                        reminderMinuteInput = reminderMinuteInput,
+                        onReminderEnabledChange = { reminderEnabled = it },
+                        onReminderHourChange = { reminderHourInput = it },
+                        onReminderMinuteChange = { reminderMinuteInput = it }
                     )
                 }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onSave(thresholdState.toMap()) }) {
+            val reminderHour = reminderHourInput.toIntOrNull()
+            val reminderMinute = reminderMinuteInput.toIntOrNull()
+            val isReminderTimeValid = reminderHour in 0..23 && reminderMinute in 0..59
+            val reminderConfig = if (reminderEnabled && isReminderTimeValid) {
+                AppPreferencesManager.ActivityReminderConfig(true, reminderHour, reminderMinute)
+            } else {
+                AppPreferencesManager.ActivityReminderConfig(false, null, null)
+            }
+            TextButton(
+                onClick = { onSave(thresholdState.toMap(), reminderConfig) },
+                enabled = !reminderEnabled || isReminderTimeValid
+            ) {
                 Text(text = stringResource(id = R.string.action_save))
             }
         },
@@ -1005,7 +1042,14 @@ private fun AlertThresholdPage(
     thresholds: List<Int>,
     thresholdInput: String,
     onThresholdInputChange: (String) -> Unit,
-    onThresholdsChange: (List<Int>) -> Unit
+    onThresholdsChange: (List<Int>) -> Unit,
+    showActivityReminder: Boolean = false,
+    reminderEnabled: Boolean = false,
+    reminderHourInput: String = "",
+    reminderMinuteInput: String = "",
+    onReminderEnabledChange: (Boolean) -> Unit = {},
+    onReminderHourChange: (String) -> Unit = {},
+    onReminderMinuteChange: (String) -> Unit = {}
 ) {
     val resourceLabel = stringResource(id = resource.titleRes)
     val displayedThresholds = thresholds.sorted()
@@ -1017,6 +1061,9 @@ private fun AlertThresholdPage(
     val isOutOfRange = numericValue != null && numericValue !in 1..maxValue
     val isError = thresholdInput.isNotBlank() && (isDuplicate || isOutOfRange)
     val canAdd = numericValue != null && numericValue in 1..maxValue && !isDuplicate
+    val reminderHour = reminderHourInput.toIntOrNull()
+    val reminderMinute = reminderMinuteInput.toIntOrNull()
+    val isReminderTimeValid = reminderHour in 0..23 && reminderMinute in 0..59
 
     val scrollState = rememberScrollState()
     Column(
@@ -1113,6 +1160,70 @@ private fun AlertThresholdPage(
                 enabled = canAdd
             ) {
                 Text(text = stringResource(id = R.string.action_add_threshold))
+            }
+        }
+        if (showActivityReminder) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    Checkbox(
+                        checked = reminderEnabled,
+                        onCheckedChange = { onReminderEnabledChange(it) }
+                    )
+                    Column {
+                        Text(
+                            text = stringResource(id = R.string.label_activity_reminder),
+                            style = MaterialTheme.typography.titleSmall,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = stringResource(id = R.string.info_activity_reminder),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = reminderHourInput,
+                        onValueChange = { newValue ->
+                            when {
+                                newValue.isEmpty() -> onReminderHourChange("")
+                                newValue.length <= 2 && newValue.all { it.isDigit() } -> onReminderHourChange(newValue)
+                            }
+                        },
+                        label = { Text(stringResource(id = R.string.hint_hour)) },
+                        singleLine = true,
+                        enabled = reminderEnabled,
+                        isError = reminderEnabled && reminderHour !in 0..23,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = reminderMinuteInput,
+                        onValueChange = { newValue ->
+                            when {
+                                newValue.isEmpty() -> onReminderMinuteChange("")
+                                newValue.length <= 2 && newValue.all { it.isDigit() } -> onReminderMinuteChange(newValue)
+                            }
+                        },
+                        label = { Text(stringResource(id = R.string.hint_minute)) },
+                        singleLine = true,
+                        enabled = reminderEnabled,
+                        isError = reminderEnabled && reminderMinute !in 0..59,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        modifier = Modifier.weight(1f)
+                    )
+                }
+                if (reminderEnabled && !isReminderTimeValid) {
+                    Text(
+                        text = stringResource(id = R.string.message_activity_reminder_invalid_time),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.error
+                    )
+                }
             }
         }
     }

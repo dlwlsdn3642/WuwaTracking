@@ -90,4 +90,12 @@
     <string name="widget_time_left_hours_minutes">%1$dh %2$dm left</string>
     <string name="widget_time_left_eta_pattern">MMM d HH:mm</string>
     <string name="widget_time_left_eta">%1$s</string>
+    <string name="label_activity_reminder">Incomplete reminder</string>
+    <string name="info_activity_reminder">At the set time, checks liveness and alerts if below 100.</string>
+    <string name="hint_hour">Hour</string>
+    <string name="hint_minute">Minute</string>
+    <string name="message_activity_reminder_invalid_time">Enter a valid time (0-23 / 0-59).</string>
+    <string name="message_activity_reminder_saved">Liveness reminder saved.</string>
+    <string name="notification_activity_reminder_title">Liveness incomplete</string>
+    <string name="notification_activity_reminder_body">%1$s liveness is still %2$d.</string>
 </resources>

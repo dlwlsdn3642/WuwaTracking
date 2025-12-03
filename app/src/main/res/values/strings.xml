@@ -89,4 +89,12 @@
     <string name="widget_time_left_hours_minutes">%1$d시간 %2$d분</string>
     <string name="widget_time_left_eta_pattern">d일 HH:mm</string>
     <string name="widget_time_left_eta">%1$s</string>
+    <string name="label_activity_reminder">미완료 알림</string>
+    <string name="info_activity_reminder">설정한 시간에 활약도를 확인해 100 미만이면 알려줍니다.</string>
+    <string name="hint_hour">시</string>
+    <string name="hint_minute">분</string>
+    <string name="message_activity_reminder_invalid_time">올바른 시간을 입력하세요 (0-23 / 0-59).</string>
+    <string name="message_activity_reminder_saved">활약도 미완료 알림을 저장했습니다.</string>
+    <string name="notification_activity_reminder_title">활약도 미완료</string>
+    <string name="notification_activity_reminder_body">%1$s의 활약도가 아직 %2$d입니다.</string>
 </resources>

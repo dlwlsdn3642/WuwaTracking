@@ -39,6 +39,10 @@
         </receiver>
 
         <receiver
+            android:name=".background.ActivityReminderReceiver"
+            android:exported="false" />
+
+        <receiver
             android:name=".widget.WuwaWidgetProvider"
             android:exported="true">
             <intent-filter>
